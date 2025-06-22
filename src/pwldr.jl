@@ -9,6 +9,7 @@ using BlackBoxOptim
 
 import JuMP: optimize!, objective_value, getindex
 
+include("pwrv.jl")
 include("canonical_transform.jl")
 include("second_moment.jl")
 include("segments/displace_segments.jl")
@@ -17,7 +18,7 @@ include("segments/segments_number.jl")
 function _build_problem(
     ABC,
     first_stage_index,
-    η_vec_list,
+    PWVR_list::Vector{PWVR},
     n_segments_vec,
     optimizer
 )
@@ -40,7 +41,7 @@ function _build_problem(
         @constraint(model, ABC.Ae * X .== Be)
     end
 
-    W = _build_W(n_segments_vec, η_vec_list)
+    W = _build_W(n_segments_vec, PWVR_list)
     h = _build_h(n_segments_vec)
 
     nW = size(W, 1)
@@ -89,7 +90,7 @@ function _build_problem(
     end
 
     C = _build_C(ABC.C, η_min, n_segments_vec)
-    M = _build_second_moment_matrix(n_segments_vec, η_vec_list)
+    M = _build_second_moment_matrix(n_segments_vec, PWVR_list)
 
     @objective(model, Max, LinearAlgebra.tr(C' * X * M))
 
@@ -98,7 +99,7 @@ end
 
 struct PWLDR
     model::JuMP.Model
-    η_vec_list::Vector{Vector{Float64}}
+    PWVR_list::Vector{PWVR}
 end
 
 function  optimize!(model::PWLDR)
@@ -115,7 +116,8 @@ end
 
 function PWLDR(ldr_model::LinearDecisionRules.LDRModel,
                 optimizer;
-                n_max_iter = 50)
+                distribution_constructor::Type = Uniform,
+                n_max_iter::Int = 50)
     ABC = ldr_model.ext[:_LDR_ABC]
     first_stage_index = ldr_model.ext[:_LDR_first_stage_indices]
 
@@ -131,7 +133,8 @@ function PWLDR(ldr_model::LinearDecisionRules.LDRModel,
 
     η_min = ABC.lb
     η_max = ABC.ub
-    η_vec_list = _displace_segments(η_min, η_max, ABC, first_stage_index, n_segments_vec, optimizer)
 
-    return PWLDR(_build_problem(ABC, first_stage_index, η_vec_list, n_segments_vec, optimizer), η_vec_list)
+    PWVR_list = _displace_segments(η_min, η_max, ABC, first_stage_index, n_segments_vec, optimizer, distribution_constructor)
+
+    return PWLDR(_build_problem(ABC, first_stage_index, PWVR_list, n_segments_vec, optimizer), PWVR_list)
 end

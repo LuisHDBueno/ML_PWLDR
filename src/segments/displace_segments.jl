@@ -1,31 +1,13 @@
-function build_η_vec_list(η_min, η_max, n_segments_vec, weights)
-    η_vec_list = []
+function evaluate_segments(weights, PWVR_list, ABC, first_stage_index, n_segments_vec, optimizer)
+
     weight_index = 1
-    for i in 1:length(η_min)
-        total_length = η_max[i] - η_min[i]
-
+    for i in 1:length(PWVR_list)
         w = weights[weight_index:weight_index + Int(n_segments_vec[i] - 1)]
+        update_breakpoints!(PWVR_list[i], w)
         weight_index += n_segments_vec[i]
-
-        #Normalizar os pesos para somar 1 e limitar superiormente η
-        w_norm = w ./ sum(w)
-
-        #Comeca do minimo e soma ate o maximo com pesos distintos
-        η_vec = [η_min[i]]
-        for j in 1:length(w_norm)
-            push!(η_vec, last(η_vec) + total_length * w_norm[j])
-        end
-        push!(η_vec_list, η_vec)
     end
 
-    return η_vec_list
-end
-
-function evaluate_segments(weights, η_min, η_max, ABC, first_stage_index, n_segments_vec, optimizer)
-
-    η_vec_list = build_η_vec_list(η_min, η_max, n_segments_vec, weights)
-
-    model = _build_problem(ABC, first_stage_index, η_vec_list, n_segments_vec, optimizer)
+    model = _build_problem(ABC, first_stage_index, PWVR_list, n_segments_vec, optimizer)
     optimize!(model)
     
     values = -objective_value(model)
@@ -39,7 +21,8 @@ function _displace_segments(
     ABC,
     first_stage_index,
     n_segments_vec,
-    optimizer
+    optimizer,
+    distribution_constructor
 )
     η_weights_list = Vector{Tuple{Float64, Float64}}()
     for i in 1:length(η_min)
@@ -49,13 +32,21 @@ function _displace_segments(
         end
     end
 
-    obj_func = hyperparam -> evaluate_segments(hyperparam, η_min, η_max,
+    PWVR_list = Vector{PWVR}()
+    for i in 1:length(η_min)
+        n = n_segments_vec[i]
+        push!(PWVR_list,
+                PWVR(distribution_constructor(η_min[i], η_max[i]),
+                        η_min[i],
+                        η_max[i],
+                        fill(1/n, Int(n)))
+                )
+    end
+
+    obj_func = hyperparam -> evaluate_segments(hyperparam, PWVR_list,
                                                 ABC, first_stage_index,
                                                 n_segments_vec, optimizer)
-    opt_result =  bboptimize(obj_func, SearchRange = η_weights_list, NumDimensions = length(η_weights_list), MaxFuncEvals = 100)
+    bboptimize(obj_func, SearchRange = η_weights_list, NumDimensions = length(η_weights_list), MaxFuncEvals = 100)
 
-    best_η_weights = best_candidate(opt_result)
-    best_η_vec_list = build_η_vec_list(η_min, η_max, n_segments_vec, best_η_weights)
-
-    return best_η_vec_list
+    return PWVR_list
 end

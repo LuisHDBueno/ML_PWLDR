@@ -42,5 +42,5 @@ model = PWLDR(ldr, HiGHS.Optimizer)
 optimize!(model)
 @show objective_value(model)
 @show value.(model[:X])
-@show model.η_vec_list
+@show model.PWVR_list[1].η_vec
 

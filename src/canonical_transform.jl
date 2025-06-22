@@ -50,16 +50,18 @@ end
 
 function _build_W(
     n_segments::Vector{Float64},
-    η_vec_list::Vector{Any}
+    PWVR_list::Vector{PWVR}
 )
     W = zeros(Int(sum(n_segments)) + length(n_segments) + 2,
                 Int(sum(n_segments)) + length(n_segments))
+                
     # "1" in (1, n)
     W[1,1] = 1
     W[2,1] = -1
 
     line = 3
-    for η_vec in η_vec_list
+    for pwvr in PWVR_list
+        η_vec = pwvr.η_vec
         for i in 2:length(η_vec)
             diff = η_vec[i] - η_vec[i-1]
             W[line, line - 1] = -1/diff
@@ -67,7 +69,6 @@ function _build_W(
             line += 1
         end
     end
-    #TODO: add already existing constraints Wu and Wh
 
     return W
 end
