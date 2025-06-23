@@ -49,7 +49,7 @@ function _build_problem(
     # Inequality contraints
     if size(ABC.Bu, 1) > 0
         Bu = _build_B(ABC.Bu, η_min, n_segments_vec)
-        @variable(model, Su[1:size(Bu, 1), 1:dim_ξ])
+        @variable(model, Su[1:size(Bu, 1), 1:dim_ξ] >= 0)
         @constraint(model, ABC.Au * X .+ Su .== Bu)
         @variable(model, ΛSu[1:size(Bu, 1),1:nW] >= 0)
         @constraint(model, ΛSu * W .== Su)
@@ -58,7 +58,7 @@ function _build_problem(
 
     if size(ABC.Bl, 1) > 0
         Bl = _build_B(ABC.Bl, η_min, n_segments_vec)
-        @variable(model, Sl[1:size(Bl, 1), 1:dim_ξ])
+        @variable(model, Sl[1:size(Bl, 1), 1:dim_ξ] >= 0)
         @constraint(model, ABC.Al * X .- Sl .== Bl)
         @variable(model, ΛSl[1:size(Bl, 1),1:nW] >= 0)
         @constraint(model, ΛSl * W .== Sl)
@@ -91,6 +91,8 @@ function _build_problem(
 
     C = _build_C(ABC.C, η_min, n_segments_vec)
     M = _build_second_moment_matrix(n_segments_vec, PWVR_list)
+
+    @show M
 
     @objective(model, Max, LinearAlgebra.tr(C' * X * M))
 

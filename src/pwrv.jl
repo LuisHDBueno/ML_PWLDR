@@ -35,14 +35,14 @@ function update_breakpoints!(variable::PWVR, new_weight)
 end
 
 function mean(variable::PWVR)
-    return Distributions.mean(variable.distribution)
+    return Distributions.mean(variable.distribution) - variable.min
 end
 
 function mean(variable::PWVR, segment_index)
     min = variable.η_vec[segment_index - 1]
     max = variable.η_vec[segment_index]
     trunc_variable = truncated(variable.distribution, min, max)
-    return Distributions.mean(trunc_variable)
+    return Distributions.mean(trunc_variable) - min
 end
 
 function var(variable::PWVR)
