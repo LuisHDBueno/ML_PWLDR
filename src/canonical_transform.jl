@@ -2,8 +2,8 @@
 function _build_B(
     B::SparseArrays.SparseMatrixCSC{Float64, Int64},
     η_min::Vector{Float64},
-    n_segments::Vector{Float64}
-    )
+    n_segments::Vector{I}
+    ) where I
 
     n_cols = Int(sum(n_segments)) + 1
     n_rows = size(B, 1)
@@ -25,15 +25,15 @@ end
 function _build_C(
     C::SparseArrays.SparseMatrixCSC{Float64, Int64},
     η_min::Vector{Float64},
-    n_segments::Vector{Float64}
-    )
+    n_segments::Vector{I}
+    ) where I
     return _build_B(C, η_min, n_segments)
 end
 
 function _build_h(
-    n_segments::Vector{Float64}
-)
-    h = zeros(Int(sum(n_segments)) + length(n_segments) + 2)
+    n_segments::Vector{F}
+) where F
+    h = zeros(Int(sum(n_segments)) + 1 + 2)
     # "1" in (1, n)
     h[1] = 1
     h[2] = -1
@@ -49,11 +49,11 @@ function _build_h(
 end
 
 function _build_W(
-    n_segments::Vector{Float64},
+    n_segments::Vector{F},
     PWVR_list::Vector{PWVR}
-)
-    W = zeros(Int(sum(n_segments)) + length(n_segments) + 2,
-                Int(sum(n_segments)) + length(n_segments))
+) where F
+    W = zeros(Int(sum(n_segments)) + 1 + 2,
+                Int(sum(n_segments)) + 1)
                 
     # "1" in (1, n)
     W[1,1] = 1

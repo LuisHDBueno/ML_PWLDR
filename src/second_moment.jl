@@ -1,10 +1,10 @@
 
 function _build_second_moment_matrix(
-    n_segments::Vector{Float64},
+    n_segments::Vector{F},
     PWVR_list::Vector{PWVR}
-)
+) where F
 
-    n_cols = Int(sum(n_segments)) + length(n_segments)
+    n_cols = Int(sum(n_segments)) + 1
     M = zeros(n_cols, n_cols)
 
     M[1,1] = 1
@@ -32,16 +32,19 @@ function _build_second_moment_matrix(
         η_vec = pwvr.η_vec
 
         init_line_block = line + 1
-        last_line_block = length(η_vec) + init_line_block - 1
+        last_line_block = length(η_vec) + init_line_block - 2
 
-        for i in (init_line_block):(last_line_block)
-            init_col_block = i + 1
-            last_col_block = last_line_block - 1
-            
-            for j in (init_col_block):(last_col_block)
-                
-                Δ_j = (η_vec[j] - η_vec[j-1])
-                Δ_i = (η_vec[i] - η_vec[i-1])
+        for i_matrix in (init_line_block):(last_line_block)
+            init_col_block = i_matrix + 1
+            last_col_block = last_line_block - 2
+
+            i = i_matrix - init_line_block + 2
+
+            for j_matrix in (init_col_block):(last_col_block)   
+                j = j_matrix - init_col_block + 2
+
+                Δ_j = (η_vec[j] - η_vec[j - 1])
+                Δ_i = (η_vec[i] - η_vec[i - 1])
 
                 # η_j-1 < x < η_j
                 mean_shift = mean(pwvr, j) - η_vec[j-1]
@@ -53,8 +56,8 @@ function _build_second_moment_matrix(
                 value_2 = Δ_i * Δ_j * p_tail
 
                 value = value_1 + value_2
-                M[i, j] = value
-                M[j, i] = value
+                M[i_matrix, j_matrix] = value
+                M[j_matrix, i_matrix] = value
             end
             line += 1
         end

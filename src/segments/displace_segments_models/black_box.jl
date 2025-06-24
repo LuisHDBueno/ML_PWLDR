@@ -1,4 +1,4 @@
-function _evaluate_segments(weights, PWVR_list, ABC, first_stage_index, n_segments_vec, optimizer)
+function evaluate_segments(weights, PWVR_list, ABC, first_stage_index, n_segments_vec, optimizer)
 
     weight_index = 1
     for i in 1:length(PWVR_list)
@@ -15,7 +15,7 @@ function _evaluate_segments(weights, PWVR_list, ABC, first_stage_index, n_segmen
     return values
 end
 
-function _displace_segments(
+function black_box(
     η_min,
     η_max,
     ABC,
@@ -42,7 +42,8 @@ function _displace_segments(
                         fill(1/n, Int(n)))
                 )
     end
-    obj_func = hyperparam -> _evaluate_segments(hyperparam, PWVR_list,
+
+    obj_func = hyperparam -> evaluate_segments(hyperparam, PWVR_list,
                                                 ABC, first_stage_index,
                                                 n_segments_vec, optimizer)
     bboptimize(obj_func, SearchRange = η_weights_list, NumDimensions = length(η_weights_list), MaxFuncEvals = 100)

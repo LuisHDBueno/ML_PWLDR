@@ -30,17 +30,22 @@ set_silent(ldr)
 @constraint(ldr, sell + ret <= buy)
 @constraint(ldr, sell <= demand)
 
-@objective(ldr, Max,
-    - buy_cost * buy
-    + return_value * ret
-    + sell_value * sell
+@objective(ldr, Min,
+    buy_cost * buy
+    - return_value * ret
+    - sell_value * sell
 )
 optimize!(ldr)
 @show objective_value(ldr)
 
 model = PWLDR(ldr, HiGHS.Optimizer)
 optimize!(model)
-@show objective_value(model)
+@show - objective_value(model)
 @show value.(model[:X])
 @show model.PWVR_list[1].η_vec
+
+C = value.(model.model.ext[:C])
+X = value.(model.model[:X])
+
+@show - evaluate_sample(model.PWVR_list, X, C, [80.0])
 

@@ -15,6 +15,10 @@ include("second_moment.jl")
 include("segments/displace_segments.jl")
 include("segments/segments_number.jl")
 
+#displace_segments_models
+include("segments/displace_segments_models/black_box.jl")
+include("segments/displace_segments_models/local_search.jl")
+
 function _build_problem(
     ABC,
     first_stage_index,
@@ -24,9 +28,10 @@ function _build_problem(
 )
 
     model = Model(optimizer)
+    set_silent(model)
 
     dim_X = size(ABC.Ae, 2)
-    dim_ξ = Int(sum(n_segments_vec) + length(n_segments_vec))
+    dim_ξ = Int(sum(n_segments_vec) + 1)
 
     η_min = ABC.lb
 
@@ -89,12 +94,13 @@ function _build_problem(
         @constraint(model, ΛSxl.data * h .>= 0)
     end
 
-    C = _build_C(ABC.C, η_min, n_segments_vec)
+    C  = _build_C(ABC.C, η_min, n_segments_vec)
+
+    model.ext[:C] = C
+
     M = _build_second_moment_matrix(n_segments_vec, PWVR_list)
 
-    @show M
-
-    @objective(model, Max, LinearAlgebra.tr(C' * X * M))
+    @objective(model, Min, LinearAlgebra.tr(C' * X * M))
 
     return model
 end
@@ -110,6 +116,29 @@ end
 
 function objective_value(model::PWLDR)
     return objective_value(model.model)
+end
+
+function evaluate_sample(PWVR_list, X, C, samples)
+
+    ξ = [1.0]
+    for (pwvr, sp) in zip(PWVR_list, samples)
+        η_vec = pwvr.η_vec
+        ξ_ext = zeros(length(η_vec) - 1)
+        value_cummulative = η_vec[1]
+        for i in 1:(length(η_vec) - 1)
+            diff = η_vec[i + 1] - η_vec[i]
+            value_cummulative += diff
+            if value_cummulative <= sp
+                ξ_ext[i] = diff
+            else
+                ξ_ext[i] = sp - sum(ξ_ext) - η_vec[1]
+                break
+            end
+        end
+        append!(ξ, ξ_ext)
+    end
+    value_ret = ξ' * C' * X * ξ
+    return value_ret
 end
 
 function getindex(model::PWLDR, indice::Symbol)
@@ -136,6 +165,7 @@ function PWLDR(ldr_model::LinearDecisionRules.LDRModel,
     η_min = ABC.lb
     η_max = ABC.ub
 
+    #TODO: Change to optional displace optimizer, Black box optimizer as pattern 
     PWVR_list = _displace_segments(η_min, η_max, ABC, first_stage_index, n_segments_vec, optimizer, distribution_constructor)
 
     return PWLDR(_build_problem(ABC, first_stage_index, PWVR_list, n_segments_vec, optimizer), PWVR_list)
