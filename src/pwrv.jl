@@ -25,7 +25,7 @@ function PWVR(
     return PWVR(distribution, n_breakpoints, min, max, range, weight, η_vec)
 end
 
-function update_breakpoints!(variable::PWVR, new_weight)
+function update_breakpoints!(variable::PWVR, new_weight::Vector{Float64})
     #Normalizar os pesos para somar 1 e limitar superiormente η
     w_norm = new_weight ./ sum(new_weight)
     variable.weight = w_norm

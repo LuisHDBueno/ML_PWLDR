@@ -1,132 +1,71 @@
-function _evaluate_local_search(PWVR_list, ABC, first_stage_index, n_segments_vec, optimizer)
-
-    model = _build_problem(ABC, first_stage_index, PWVR_list, n_segments_vec, optimizer)
-    optimize!(model)
-    
-    values = objective_value(model)
-    
-    return values
+function _evaluate_local_search(
+    pwldr_model::PWLDR
+)
+    optimize!(pwldr_model) 
+    return objective_value(pwldr_model)
 end
 
-function _local_search_η_vec(η_vec, index, PWVR_list, ABC, first_stage_index, n_segments_vec, optimizer; tolerance = 2)
+function _local_search_η_vec!(
+    pwldr_model::PWLDR,
+    weight_vec::Vector{Vector{Float64}},
+    index::Int;
+    step = 0.01
+)
+    value = _evaluate_local_search(pwldr_model)
+
+    size = length(weight_vec[index])
+    weight = weight_vec[index]
+
     improved = true
     while improved
-
+        
         improved = false
-        for i in 2:(length(η_vec) - 1)
-            
-            value_η = _evaluate_local_search(PWVR_list, ABC, first_stage_index, n_segments_vec, optimizer)
 
-            η_vec_copy = copy(η_vec)
-            if (η_vec[i] - η_vec[i - 1] >= tolerance)
-                lower = (η_vec[i] + η_vec[i - 1])/2
-                η_vec_copy[i] = lower
-                PWVR_list[index].η_vec = η_vec_copy
+        for i in 2:(size - 1)
+            weight_copy = copy(weight)
 
-                value_η_copy = _evaluate_local_search(PWVR_list, ABC, first_stage_index, n_segments_vec, optimizer)
-                if value_η_copy > value_η
-                    η_vec = η_vec_copy
+            if (weight[i] - step > 0)
+                weight_copy[i] = weight[i] - step
+                weight_vec[index] = weight_copy
+                update_breakpoints!(pwldr_model, weight_vec)
+                value_lower = _evaluate_local_search(pwldr_model)
+                if value_lower > value
                     improved = true
+                    value = value_lower
+                    weight = weight_copy
                     break
                 end
             end
-            if (η_vec[i + 1] - η_vec[i] >= tolerance)
-                upper = (η_vec[i] + η_vec[i + 1])/2
-                η_vec_copy[i] = upper
-                PWVR_list[index].η_vec = η_vec_copy
 
-                value_η_copy = _evaluate_local_search(PWVR_list, ABC, first_stage_index, n_segments_vec, optimizer)
-                if value_η_copy > value_η
-                    η_vec = η_vec_copy
+            if (weight[i] + step <= 1)
+                weight_copy[i] = weight[i] + step
+                weight_vec[index] = weight_copy
+
+                update_breakpoints!(pwldr_model, weight_vec)
+                value_upper = _evaluate_local_search(pwldr_model)
+                if value_upper > value
                     improved = true
+                    value = value_upper
+                    weight = weight_copy
                     break
                 end
             end
+
+            weight_vec[index] = weight
         end
     end
-
-    return η_vec
 end
 
-function local_search_independent(
-    η_min,
-    η_max,
-    ABC,
-    first_stage_index,
-    n_segments_vec,
-    optimizer,
-    distribution_constructor
+function local_search_independent!(
+    pwldr_model::PWLDR
 )
-
-    PWVR_list = Vector{PWVR}()
-    for i in 1:length(η_min)
-        n = n_segments_vec[i]
-        push!(PWVR_list,
-                PWVR(distribution_constructor(η_min[i], η_max[i]),
-                        η_min[i],
-                        η_max[i],
-                        fill(1/n, Int(n)))
-                )
+    weight_vec = Vector{Vector{Float64}}()
+    for pwvr in pwldr_model.PWVR_list
+        push!(weight_vec, pwvr.weight)
     end
-    for (i, pwvr) in enumerate(PWVR_list)
-        values = _local_search_η_vec(pwvr.η_vec, i, PWVR_list,
-                                         ABC, first_stage_index, n_segments_vec,
-                                         optimizer)
-        pwvr.η_vec = values
+
+    for i in 1:length(pwldr_model.PWVR_list)
+        _local_search_η_vec!(pwldr_model, weight_vec, i)
         println("otimizado $i")
     end
-
-    return PWVR_list
-end
-
-function local_search_greed(
-    η_min,
-    η_max,
-    ABC,
-    first_stage_index,
-    n_segments_vec,
-    optimizer,
-    distribution_constructor
-)
-    PWVR_list = Vector{PWVR}()
-    for i in 1:length(η_min)
-        n = n_segments_vec[i]
-        push!(PWVR_list,
-                PWVR(distribution_constructor(η_min[i], η_max[i]),
-                        η_min[i],
-                        η_max[i],
-                        fill(1/n, Int(n)))
-                )
-    end
-    list_copy = copy(PWVR_list)
-
-    while !isempty(list_copy)
-        best_value = -Inf
-        best_i = 0
-        best_η = nothing
-        best_pwvr = nothing
-
-        for (i, pwvr) in enumerate(list_copy)
-            η_vec = _local_search_η_vec(pwvr.η_vec, i, PWVR_list,
-                                         ABC, first_stage_index, n_segments_vec,
-                                         optimizer)
-            value = evaluate(pwvr, η_vec)
-
-            if value > best_value
-                best_value = value
-                best_i = i
-                best_η = η_vec
-                best_pwvr = pwvr
-            end
-        end
-        deleteat!(list_copy, best_i)
-
-        for pwvr in PWVR_list
-            if pwvr === best_pwvr
-                pwvr.η_vec = best_η
-                break
-            end
-        end
-    end
-    return PWVR_list
 end

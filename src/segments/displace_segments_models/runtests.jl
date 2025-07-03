@@ -2,33 +2,12 @@ include("../../pwldr.jl")
 include("../train_problems/shipment_planning.jl")
 include("../train_problems/shortest_path.jl")
 
+#Models
+include("black_box.jl")
+include("local_search.jl")
+
 using CSV
 using DataFrames
-
-function build_model(ldr_model::LinearDecisionRules.LDRModel,
-    n_segments_vec,
-    optimizer,
-    displace_function,
-    dist
-    )
-    ABC = ldr_model.ext[:_LDR_ABC]
-    first_stage_index = ldr_model.ext[:_LDR_first_stage_indices]
-
-    η_min = ABC.lb
-    η_max = ABC.ub
-
-    distribution_constructor = (a, b)-> truncated(dist, a, b)
-    PWVR_list = displace_function(η_min,
-                                    η_max,
-                                    ABC,
-                                    first_stage_index,
-                                    n_segments_vec,
-                                    optimizer,
-                                    distribution_constructor)
-
-    pwldr = PWLDR(_build_problem(ABC, first_stage_index, PWVR_list, n_segments_vec, optimizer), PWVR_list)
-    return pwldr
-end
 
 function shipment_planning_test(dist_list, optimizer, n_samples)
 
@@ -37,11 +16,10 @@ function shipment_planning_test(dist_list, optimizer, n_samples)
     n_clients_list = [2, 5, 10]
     n_segments = [2, 5, 10]
 
-    displace_function = [#("black_box", black_box),
-                        ("ls_independent", local_search_independent),
-                        ("ls_greed", local_search_greed)]
+    displace_function = [("black_box", black_box!),
+                        ("ls_independent", local_search_independent!)]
 
-    checkpoint_file = "data/shipment.csv"
+    checkpoint_file = "data/shipment2.csv"
     
     if isfile(checkpoint_file)
         results_df = CSV.read(checkpoint_file, DataFrame)
@@ -57,9 +35,11 @@ function shipment_planning_test(dist_list, optimizer, n_samples)
         )
     end
 
+    println("Init shipment planning")
     for (func_name, func) in displace_function
         for (dist_name, dist) in dist_list
             for n_clients in n_clients_list
+                distribution_constructor = (a, b)-> truncated(dist, a, b)
 
                 #LDR Problem
                 ldr, prod_cost_1, prod_cost_2, client_cost = shipment_planning(n_products, n_clients, dist, optimizer)
@@ -81,13 +61,14 @@ function shipment_planning_test(dist_list, optimizer, n_samples)
                         continue
                     end
                     
-                    n_segments_vec = fill(seg, n_clients)
-                    pwldr = build_model(ldr, n_segments_vec, optimizer, func, dist)
-                    optimize!(pwldr)
-                    
-                    C = value.(pwldr.model.ext[:C])
-                    X = value.(pwldr.model[:X])
-                    PWVR_list = pwldr.PWVR_list
+                    pwldr_model = PWLDR(ldr, optimizer, distribution_constructor)
+                    func(pwldr_model)
+                    optimize!(pwldr_model)
+
+                    C = value.(pwldr_model.model.ext[:C])
+                    X = value.(pwldr_model.model[:X])
+
+                    PWVR_list = pwldr_model.PWVR_list
 
                     sum_model = 0.0
                     for sample in samples_list
@@ -119,8 +100,7 @@ function shortest_path_test(dist_list, optimizer, n_samples)
     n_segments = [2, 5, 10]
     
     displace_function = [("black_box", black_box),
-                        ("local_search_independent", local_search_independent),
-                        ("local_search_greed", local_search_greed)]
+                        ("local_search_independent", local_search_independent)]
 
     checkpoint_file = "data/shortest_path.csv"
     
@@ -139,9 +119,11 @@ function shortest_path_test(dist_list, optimizer, n_samples)
         )
     end
 
+    println("Init shortest path")
     for (func_name, func) in displace_function
         for (dist_name, dist) in dist_list
             for (n_nodes, n_edges) in zip(n_nodes_list, n_edges_list)
+                distribution_constructor = (a, b)-> truncated(dist, a, b)
 
                 #LDR Problem
                 ldr, A = shortest_path(n_nodes, n_edges, 1, n_nodes, dist, optimizer)
@@ -164,13 +146,13 @@ function shortest_path_test(dist_list, optimizer, n_samples)
                         continue
                     end
                     
-                    n_segments_vec = fill(seg, n_edges)
-                    pwldr = build_model(ldr, n_segments_vec, optimizer, func, dist)
-                    optimize!(pwldr)
+                    pwldr_model = PWLDR(ldr, optimizer, distribution_constructor)
+                    func(pwldr_model)
+                    optimize!(pwldr_model)
                     
-                    C = value.(pwldr.model.ext[:C])
-                    X = value.(pwldr.model[:X])
-                    PWVR_list = pwldr.PWVR_list
+                    C = value.(pwldr_model.model.ext[:C])
+                    X = value.(pwldr_model.model[:X])
+                    PWVR_list = pwldr_model.PWVR_list
 
                     sum_model = 0.0
                     for sample in samples_list
@@ -202,8 +184,8 @@ dist_list = [("Unif 10,90", Uniform(10, 90)),
             ("Unif 35,65", Uniform(35, 65)),
             ("Normal 50,5 - 10,90", truncated(Normal(50, 5), 10, 90)),
             ("Normal 50,5 - 35,65", truncated(Normal(50, 5), 35, 65)),
-            #("Normal 50,20 - 10,90", truncated(Normal(50, 20), 10, 90)),
-            #("Normal 50,20 - 35,65", truncated(Normal(50, 20), 35, 65))
+            ("Normal 50,20 - 10,90", truncated(Normal(50, 20), 10, 90)),
+            ("Normal 50,20 - 35,65", truncated(Normal(50, 20), 35, 65))
             ]
 
 using HiGHS

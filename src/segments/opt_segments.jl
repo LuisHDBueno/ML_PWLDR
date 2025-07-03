@@ -16,7 +16,7 @@ function _evaluate_segments(
     return objective_value(pwldr_model)
 end
 
-function black_box!(
+function opt_segments!(
     pwldr_model::PWLDR
 )
     η_weights_list = Vector{Tuple{Float64, Float64}}()
