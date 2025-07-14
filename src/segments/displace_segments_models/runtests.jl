@@ -9,6 +9,17 @@ include("local_search.jl")
 using CSV
 using DataFrames
 
+function evaluate_ldr(ldr, sample)
+    X = value.(ldr.primal_model[:X])
+    C = ldr.ext[:_LDR_ABC].C
+    ξ = [1.0]
+    append!(ξ, sample)
+    @show ξ
+    @show X
+    @show C
+    return (C * ξ)' * (X * ξ)
+end
+
 function shipment_planning_test(dist_list, optimizer, n_samples)
 
     # Fixed because it doesn't affect the uncertainty
@@ -19,7 +30,7 @@ function shipment_planning_test(dist_list, optimizer, n_samples)
     displace_function = [("black_box", black_box!),
                         ("ls_independent", local_search_independent!)]
 
-    checkpoint_file = "data/shipment2.csv"
+    checkpoint_file = "data/shipment_with_ldr.csv"
     
     if isfile(checkpoint_file)
         results_df = CSV.read(checkpoint_file, DataFrame)
@@ -31,7 +42,9 @@ function shipment_planning_test(dist_list, optimizer, n_samples)
             displace_func = String[],
             PI = Float64[],
             sum_model = Float64[],
-            sum_pi = Float64[]
+            sum_pi = Float64[],
+            diff_pw = Float64[],
+            sum_ldr = Float64[]
         )
     end
 
@@ -45,8 +58,15 @@ function shipment_planning_test(dist_list, optimizer, n_samples)
                 ldr, prod_cost_1, prod_cost_2, client_cost = shipment_planning(n_products, n_clients, dist, optimizer)
                 optimize!(ldr)
 
-                #Perfect Info sum
                 samples_list = eachcol(rand(dist, n_clients, n_samples))
+
+                #LDR sum
+                sum_ldr = 0.0
+                for sample in samples_list
+                    sum_ldr += evaluate_ldr(ldr, sample)
+                end
+
+                #Perfect Info sum
                 sum_pi = 0.0
                 for sample in samples_list
                     sum_pi += shipment_PI(prod_cost_1, prod_cost_2, client_cost, sample, optimizer)
@@ -76,6 +96,8 @@ function shipment_planning_test(dist_list, optimizer, n_samples)
                     end
                     PI = (sum_model - sum_pi) / sum_pi
 
+                    diff_pw = (sum_ldr - sum_model) / sum_model
+
                     push!(results_df, (
                         dist = dist_name,
                         n_clients = n_clients,
@@ -83,7 +105,9 @@ function shipment_planning_test(dist_list, optimizer, n_samples)
                         displace_func = func_name,
                         PI = PI,
                         sum_model = sum_model,
-                        sum_pi = sum_pi
+                        sum_pi = sum_pi,
+                        diff_pw = diff_pw,
+                        sum_ldr = sum_ldr
                     ))
                     println("Checkpoint: dist=$dist_name, n_clients=$n_clients, func=$func_name, n_segments=$seg")
                     CSV.write(checkpoint_file, results_df)
@@ -99,10 +123,10 @@ function shortest_path_test(dist_list, optimizer, n_samples)
     n_edges_list = [15, 30, 75]
     n_segments = [2, 5, 10]
     
-    displace_function = [("black_box", black_box),
-                        ("local_search_independent", local_search_independent)]
+    displace_function = [("black_box", black_box!),
+                        ("local_search_independent", local_search_independent!)]
 
-    checkpoint_file = "data/shortest_path.csv"
+    checkpoint_file = "data/shortest_path_with_ldr.csv"
     
     if isfile(checkpoint_file)
         results_df = CSV.read(checkpoint_file, DataFrame)
@@ -115,7 +139,9 @@ function shortest_path_test(dist_list, optimizer, n_samples)
             displace_func = String[],
             PI = Float64[],
             sum_model = Float64[],
-            sum_pi = Float64[]
+            sum_pi = Float64[],
+            diff_pw = Float64[],
+            sum_ldr = Float64[]
         )
     end
 
@@ -129,11 +155,18 @@ function shortest_path_test(dist_list, optimizer, n_samples)
                 ldr, A = shortest_path(n_nodes, n_edges, 1, n_nodes, dist, optimizer)
                 optimize!(ldr)
 
-                #Perfect Info sum
                 samples_list = eachcol(rand(dist, n_edges, n_samples))
+
+                #LDR sum
+                sum_ldr = 0.0
+                for sample in samples_list
+                    sum_ldr += evaluate_ldr(ldr, sample)
+                end
+
+                #Perfect Info sum
                 sum_pi = 0.0
                 for sample in samples_list
-                    sum_pi += shortest_path_PI(A, sample, 1, n_nodes, optimizer)
+                    sum_pi += shortest_path_PI(A, sample, 1, n_nodes, n_nodes, n_edges, optimizer)
                 end
 
                 for seg in n_segments
@@ -160,6 +193,8 @@ function shortest_path_test(dist_list, optimizer, n_samples)
                     end
                     PI = (sum_model - sum_pi) / sum_pi
 
+                    diff_pw = (sum_ldr - sum_model) / sum_model
+
                     push!(results_df, (
                         dist = dist_name,
                         n_nodes = n_nodes,
@@ -168,9 +203,11 @@ function shortest_path_test(dist_list, optimizer, n_samples)
                         displace_func = func_name,
                         PI = PI,
                         sum_model = sum_model,
-                        sum_pi = sum_pi
+                        sum_pi = sum_pi,
+                        diff_pw = diff_pw,
+                        sum_ldr = sum_ldr
                     ))
-                    println("Checkpoint: dist=$dist_name, n_clients=$n_clients, func=$func_name, n_segments=$seg")
+                    println("Checkpoint: dist=$dist_name, n_edges=$n_edges, n_nodes=$n_nodes, func=$func_name, n_segments=$seg")
                     CSV.write(checkpoint_file, results_df)
                 end
             end
@@ -181,14 +218,14 @@ end
 Random.seed!(1234)
 
 dist_list = [("Unif 10,90", Uniform(10, 90)),
-            ("Unif 35,65", Uniform(35, 65)),
-            ("Normal 50,5 - 10,90", truncated(Normal(50, 5), 10, 90)),
-            ("Normal 50,5 - 35,65", truncated(Normal(50, 5), 35, 65)),
-            ("Normal 50,20 - 10,90", truncated(Normal(50, 20), 10, 90)),
-            ("Normal 50,20 - 35,65", truncated(Normal(50, 20), 35, 65))
+            #("Unif 35,65", Uniform(35, 65)),
+            #("Normal 50,5 - 10,90", truncated(Normal(50, 5), 10, 90)),
+            #("Normal 50,5 - 35,65", truncated(Normal(50, 5), 35, 65)),
+            #("Normal 50,20 - 10,90", truncated(Normal(50, 20), 10, 90)),
+            #("Normal 50,20 - 35,65", truncated(Normal(50, 20), 35, 65))
             ]
 
 using HiGHS
 
-shipment_planning_test(dist_list, HiGHS.Optimizer, 200)
+shipment_planning_test(dist_list, HiGHS.Optimizer, 1)
 #shortest_path_test(dist_list, HiGHS.Optimizer, 200)

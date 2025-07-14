@@ -198,10 +198,11 @@ function update_breakpoints!(pwldr::PWLDR, weight_vec::Vector{Vector{Float64}})
 end
 
 function evaluate_sample(PWVR_list, X, C, samples)
-
+    #Change evaluate to correct sample order
     ξ = [1.0]
     for (pwvr, sp) in zip(PWVR_list, samples)
         η_vec = pwvr.η_vec
+        @show η_vec
         ξ_ext = zeros(length(η_vec) - 1)
         value_cummulative = η_vec[1]
         for i in 1:(length(η_vec) - 1)
@@ -216,7 +217,10 @@ function evaluate_sample(PWVR_list, X, C, samples)
         end
         append!(ξ, ξ_ext)
     end
-    value_ret = ξ' * C' * X * ξ
+    @show ξ
+    @show X
+    @show C
+    value_ret = (C * ξ)' * (X * ξ)
     return value_ret
 end
 

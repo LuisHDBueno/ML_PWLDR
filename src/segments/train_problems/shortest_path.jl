@@ -57,7 +57,7 @@ function shortest_path(n_nodes::Int, n_edges::Int, ns::Int, nt::Int,
     return ldr, A
 end
 
-function shortest_path_PI(A, ξ, ns::Int, nt::Int, optimizer)
+function shortest_path_PI(A, ξ, ns::Int, nt::Int, n_nodes::Int, n_edges::Int, optimizer)
     ldr = LinearDecisionRules.LDRModel(optimizer)
     set_silent(ldr)
 
