@@ -1,50 +1,47 @@
 
 function _build_B(
     B::SparseArrays.SparseMatrixCSC{Float64, Int64},
-    η_min::Vector{Float64},
     n_segments::Vector{I}
     ) where I
 
-    n_cols = Int(sum(n_segments)) + 1
-    n_rows = size(B, 1)
-    B_new = zeros(n_rows, n_cols)
-    B_new[:,1] = B[:,1]
-    col = 2
-
-    for i in 1:length(η_min)
-        B_new[:, 1] += B[:, i + 1] * η_min[i]
-        for _ in 1:n_segments[i]
-            B_new[:, col] = B[:, i + 1]
-            col += 1
-        end
-    end
+    col_indices = vcat([fill(i+1, n_segments[i]) for i in 1:length(n_segments)]...)
+    B_new = hcat(B[:, 1], B[:, col_indices])
 
     return B_new
 end
 
 function _build_C(
     C::SparseArrays.SparseMatrixCSC{Float64, Int64},
-    η_min::Vector{Float64},
     n_segments::Vector{I}
     ) where I
-    return _build_B(C, η_min, n_segments)
+    return _build_B(C, n_segments)
 end
 
 function _build_h(
-    n_segments::Vector{F}
-) where F
-    h = zeros(Int(sum(n_segments)) + 1 + 2)
-    # "1" in (1, n)
-    h[1] = 1
-    h[2] = -1
+    PWVR_list::Vector{PWVR}
+)
+    ub = Float64[]
+    lb = Float64[]
+    hu = Float64[]
 
-    col = 2
-    # eta inequalities
-    for i in n_segments
-        h[col + 1] = -1
-        col += i
+    for pwvr in PWVR_list
+        
+        push!(lb, pwvr.η_vec[2])
+        append!(lb, zeros(Float64, pwvr.n_breakpoints))
+
+        push!(ub, pwvr.η_vec[3] - pwvr.η_vec[1])
+        for i in 3:(pwvr.n_breakpoints + 2)
+            push!(ub, pwvr.η_vec[i + 1] - pwvr.η_vec[i])
+        end
+
+        if (pwvr.n_breakpoints == 0)
+            continue
+        end
+        push!(hu, - last(pwvr.η_vec))
+        push!(hu, pwvr.η_vec[2] * (pwvr.η_vec[4] - pwvr.η_vec[3]))
+        append!(hu, zeros(Float64, max(pwvr.n_breakpoints - 1, 0)))
     end
-
+    h = vcat([1.0], [-1.0], hu, -ub, lb)
     return h
 end
 
@@ -52,23 +49,57 @@ function _build_W(
     n_segments::Vector{F},
     PWVR_list::Vector{PWVR}
 ) where F
-    W = zeros(Int(sum(n_segments)) + 1 + 2,
-                Int(sum(n_segments)) + 1)
-                
-    # "1" in (1, n)
-    W[1,1] = 1
-    W[2,1] = -1
-
-    line = 3
+    dim_uncertainty = Int(sum(n_segments))
+    
+    rows = Int[]
+    cols = Int[]
+    vals = Float64[]
+    line = 1
+    col = 1
     for pwvr in PWVR_list
-        η_vec = pwvr.η_vec
-        for i in 2:length(η_vec)
-            diff = η_vec[i] - η_vec[i-1]
-            W[line, line - 1] = -1/diff
-            W[line + 1, line - 1] = 1/diff
+        if (pwvr.n_breakpoints == 0)
+            col += 1
+            continue
+        end
+
+        if (pwvr.n_breakpoints > 0)
+            for _ in 1:(pwvr.n_breakpoints + 1)
+                push!(rows, line)
+                push!(cols, col)
+                push!(vals, 1)
+                col += 1
+            end
+            col -= (pwvr.n_breakpoints + 1)
             line += 1
         end
+
+        for i in 2:(pwvr.n_breakpoints + 1)
+            push!(rows, line)
+            push!(cols, col)
+            push!(vals, -(pwvr.η_vec[i+2] - pwvr.η_vec[i+1]))
+
+            push!(rows, line)
+            push!(cols, col+1)
+            push!(vals, pwvr.η_vec[i+1] - pwvr.η_vec[i])
+
+            line += 1
+            col += 1
+        end
+        col += 1
     end
+    
+    Wu = sparse(rows, cols, vals, line - 1, col - 1)
+
+    nu = size(Wu, 1)
+    top_block = [1  zeros(1, dim_uncertainty)
+                -1 zeros(1, dim_uncertainty) ]
+
+    middle_block = [zeros(nu, 1)   -Wu
+                    zeros(dim_uncertainty, 1)  -SparseArrays.I(dim_uncertainty)
+                    zeros(dim_uncertainty, 1)   SparseArrays.I(dim_uncertainty) ]
+
+    W = [top_block;
+        middle_block]
 
     return W
 end

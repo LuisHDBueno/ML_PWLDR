@@ -1,4 +1,5 @@
 using Distributions
+using Expectations
 using JuMP
 using Statistics
 using Random
@@ -19,6 +20,7 @@ struct PWLDR
     PWVR_list::Vector{PWVR}
     n_segments_vec::Vector{Int}
     W_constraints::Dict{Symbol, Matrix{JuMP.ConstraintRef}}
+    h_constraints::Dict{Symbol, Vector{JuMP.ConstraintRef}}
 end
 
 function _build_init_pwvr_list(
@@ -61,45 +63,45 @@ function _build_problem(
     dim_X = size(ABC.Ae, 2)
     dim_ξ = Int(sum(n_segments_vec) + 1)
 
-    @variable(model, X[1:dim_X, 1:dim_ξ])
-    for i in first_stage_index
-        @constraint(model, X[i, 2:end] .== 0)
-    end
-
-    # Equality constraints
-    if size(ABC.Be, 1) > 0
-        Be = _build_B(ABC.Be, η_min, n_segments_vec)
-        @constraint(model, ABC.Ae * X .== Be)
+    @expression(model, X[1:dim_X, 1:dim_ξ], AffExpr(0.0))
+    for i in 1:dim_X
+        if i in first_stage_index
+            X[i, 1] = @variable(model, base_name = "X[$i,1]")
+        else
+            for j in 1:dim_ξ
+                X[i, j] = @variable(model, base_name = "X[$i,$j]")
+            end
+        end
     end
 
     #Reference each W dependent constraint                        
     W_constraints = Dict{Symbol, Matrix{JuMP.ConstraintRef}}()
+    h_constraints = Dict{Symbol, Vector{JuMP.ConstraintRef}}()
     W = _build_W(n_segments_vec, pwvr_list)
-    h = _build_h(n_segments_vec)
-
+    h = _build_h(pwvr_list)
     nW = size(W, 1)
 
     # Inequality contraints
     if size(ABC.Bu, 1) > 0
-        Bu = _build_B(ABC.Bu, η_min, n_segments_vec)
-        @variable(model, Su[1:size(Bu, 1), 1:dim_ξ] >= 0)
+        Bu = _build_B(ABC.Bu, n_segments_vec)
+        @variable(model, Su[1:size(Bu, 1), 1:dim_ξ])
         @constraint(model, ABC.Au * X .+ Su .== Bu)
         @variable(model, ΛSu[1:size(Bu, 1),1:nW] >= 0)
-        
-        #W dependence
+
+        #W, h dependence
         W_constraints[:upper_ineq] = @constraint(model, ΛSu * W .== Su)
-        @constraint(model, ΛSu * h .>= 0)
+        h_constraints[:upper_ineq] = @constraint(model, ΛSu * h .>= 0)
     end
 
     if size(ABC.Bl, 1) > 0
-        Bl = _build_B(ABC.Bl, η_min, n_segments_vec)
-        @variable(model, Sl[1:size(Bl, 1), 1:dim_ξ] >= 0)
+        Bl = _build_B(ABC.Bl, n_segments_vec)
+        @variable(model, Sl[1:size(Bl, 1), 1:dim_ξ])
         @constraint(model, ABC.Al * X .- Sl .== Bl)
         @variable(model, ΛSl[1:size(Bl, 1),1:nW] >= 0)
 
-        #W dependence
-        W_constraints[:lower_ineq] =  @constraint(model, ΛSl * W .== Sl)
-        @constraint(model, ΛSl * h .>= 0)
+        #W, h dependence
+        W_constraints[:lower_ineq] = @constraint(model, ΛSl * W .== Sl)
+        h_constraints[:lower_ineq] = @constraint(model, ΛSl * h .>= 0)
     end
 
     # Can only include rows where the bound is not +Inf
@@ -111,9 +113,9 @@ function _build_problem(
 
         @variable(model, ΛSxu[idxs_xu,1:nW] >= 0)
 
-        #W dependence
+        #W, h dependence
         W_constraints[:upper_x] = @constraint(model, ΛSxu.data * W .== Sxu.data)
-        @constraint(model, ΛSxu.data * h .>= 0)
+        h_constraints[:upper_x] = @constraint(model, ΛSxu.data * h .>= 0)
     end
 
     # Can only include rows where the bound is not -Inf
@@ -125,20 +127,25 @@ function _build_problem(
 
         @variable(model, ΛSxl[idxs_xl,1:nW] >= 0)
         
-        #W dependence
+        #W, h dependence
         W_constraints[:lower_x] = @constraint(model, ΛSxl.data * W .== Sxl.data)
-        @constraint(model, ΛSxl.data * h .>= 0)
+        h_constraints[:lower_x] = @constraint(model, ΛSxl.data * h .>= 0)
     end
 
-    C  = _build_C(ABC.C, η_min, n_segments_vec)
+    C  = _build_C(ABC.C, n_segments_vec)
 
     model.ext[:C] = C
-
     M = _build_second_moment_matrix(n_segments_vec, pwvr_list)
 
-    @objective(model, Min, LinearAlgebra.tr(C' * X * M))
+    @expression(model, obj, LinearAlgebra.tr(C' * X * M))
 
-    return PWLDR(model, pwvr_list, n_segments_vec, W_constraints)
+    if ldr_model.ext[:_LDR_sense] == MOI.MIN_SENSE
+        @objective(model, Min, obj)
+    else
+        @objective(model, Max, obj)
+    end
+
+    return PWLDR(model, pwvr_list, n_segments_vec, W_constraints, h_constraints)
 end
 
 function  optimize!(model::PWLDR)
@@ -161,19 +168,22 @@ function update_breakpoints!(pwldr::PWLDR, weight_vec::Vector{Vector{Float64}})
     end
 
     W = _build_W(pwldr.n_segments_vec, pwldr.PWVR_list)
+    h = _build_h(pwldr.PWVR_list)
     model = pwldr.model
     if haskey(pwldr.W_constraints, :upper_ineq)
         delete_matrix_constraint(model, pwldr.W_constraints[:upper_ineq])
         ΛSu = model[:ΛSu]
         Su = model[:Su]
         pwldr.W_constraints[:upper_ineq] = @constraint(model, ΛSu * W .== Su)
+        pwldr.h_constraints[:upper_ineq] = @constraint(model, ΛSu * h .>= 0)
     end
 
     if haskey(pwldr.W_constraints, :lower_ineq)
         delete_matrix_constraint(model, pwldr.W_constraints[:lower_ineq])
         ΛSl = model[:ΛSl]
         Sl = model[:Sl]
-        pwldr.W_constraints[:lower_ineq] =  @constraint(model, ΛSl * W .== Sl)
+        pwldr.W_constraints[:lower_ineq] = @constraint(model, ΛSl * W .== Sl)
+        pwldr.h_constraints[:lower_ineq] = @constraint(model, ΛSl * h .>= 0)
     end
 
     if haskey(pwldr.W_constraints, :upper_x)
@@ -181,6 +191,7 @@ function update_breakpoints!(pwldr::PWLDR, weight_vec::Vector{Vector{Float64}})
         ΛSxu = model[:ΛSxu]
         Sxu = model[:Sxu]
         pwldr.W_constraints[:upper_x] = @constraint(model, ΛSxu.data * W .== Sxu.data)
+        pwldr.h_constraints[:upper_x] = @constraint(model, ΛSxu.data * h .>= 0)
     end
 
     if haskey(pwldr.W_constraints, :lower_x)
@@ -188,6 +199,7 @@ function update_breakpoints!(pwldr::PWLDR, weight_vec::Vector{Vector{Float64}})
         ΛSxl = model[:ΛSxl]
         Sxl = model[:Sxl]
         pwldr.W_constraints[:lower_x] = @constraint(model, ΛSxl.data * W .== Sxl.data)
+        pwldr.W_constraints[:lower_x] = @constraint(model, ΛSxl.data * h .>= 0)
     end
 
     X = model[:X]
@@ -202,24 +214,21 @@ function evaluate_sample(PWVR_list, X, C, samples)
     ξ = [1.0]
     for (pwvr, sp) in zip(PWVR_list, samples)
         η_vec = pwvr.η_vec
-        @show η_vec
-        ξ_ext = zeros(length(η_vec) - 1)
-        value_cummulative = η_vec[1]
-        for i in 1:(length(η_vec) - 1)
-            diff = η_vec[i + 1] - η_vec[i]
+        ξ_ext = zeros(pwvr.n_breakpoints + 1)
+        value_cummulative = η_vec[2]
+        for i in 1:(pwvr.n_breakpoints + 1)
+            diff = η_vec[i + 2] - η_vec[i + 1]
             value_cummulative += diff
             if value_cummulative <= sp
-                ξ_ext[i] = diff
+                ξ_ext[i] = value_cummulative - sum(ξ_ext)
             else
-                ξ_ext[i] = sp - sum(ξ_ext) - η_vec[1]
+                ξ_ext[i] = sp - sum(ξ_ext)
                 break
             end
         end
         append!(ξ, ξ_ext)
     end
-    @show ξ
-    @show X
-    @show C
+
     value_ret = (C * ξ)' * (X * ξ)
     return value_ret
 end
@@ -241,3 +250,4 @@ function PWLDR(ldr_model::LinearDecisionRules.LDRModel,
 
     return pwldr_model
 end
+
