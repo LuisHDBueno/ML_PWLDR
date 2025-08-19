@@ -6,9 +6,8 @@ function _segments_number(ldr_model; fix_n = 3)
     n_segments_vec = zeros(Int, dim_ξ_ldr - 1)
     dim_ξ = 1
     for i in 1:(dim_ξ_ldr - 1)
-        n_segments = fix_n
-        dim_ξ += n_segments
-        n_segments_vec[i] = n_segments
+        dim_ξ += fix_n
+        n_segments_vec[i] = fix_n
     end
     return n_segments_vec
 end

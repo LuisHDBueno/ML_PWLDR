@@ -22,7 +22,7 @@ function generate_connected_random_graph(n_nodes::Int, n_edges::Int)
     return A
 end
 
-function shortest_path(n_nodes::Int, n_edges::Int, ns::Int, nt::Int,
+function shortest_path_ldr(n_nodes::Int, n_edges::Int, ns::Int, nt::Int,
                          distribution, optimizer)
     ldr = LinearDecisionRules.LDRModel(optimizer)
     set_silent(ldr)
@@ -31,11 +31,12 @@ function shortest_path(n_nodes::Int, n_edges::Int, ns::Int, nt::Int,
 
     @variable(ldr, flow[1:n_edges])
 
-    dists = [distribution for _ in 1:n_edges]
-    joint_dist = Product(dists)
-    @variable(ldr, ξ[1:n_edges] in LinearDecisionRules.Uncertainty(
-        distribution = joint_dist
-    ))
+    @variable(ldr, ξ[1:n_edges] in LinearDecisionRules.Uncertainty(;
+                                    distribution = product_distribution([
+                                        distribution for _ in 1:n_edges
+                                    ]),
+                                    )
+                )
 
     # Out
     @constraint(ldr, sum(flow[i] for i in n_out_indices(A, ns)) == 1)
@@ -57,30 +58,32 @@ function shortest_path(n_nodes::Int, n_edges::Int, ns::Int, nt::Int,
     return ldr, A
 end
 
-function shortest_path_PI(A, ξ, ns::Int, nt::Int, n_nodes::Int, n_edges::Int, optimizer)
-    ldr = LinearDecisionRules.LDRModel(optimizer)
-    set_silent(ldr)
+function shortest_path_ws(A, n_edges, n_nodes, samples_list, ns, nt, optimizer)
+    model = LinearDecisionRules.LDRModel(optimizer)
+    set_silent(model)
 
-    @variable(ldr, flow[1:n_edges])
+    @variable(model, flow[1:n_edges])
 
     # Out
-    @constraint(ldr, sum(flow[i] for i in n_out_indices(A, ns)) == 1)
+    @constraint(model, sum(flow[i] for i in n_out_indices(A, ns)) == 1)
 
     # In
-    @constraint(ldr, sum(flow[i] for i in n_in_indices(A, nt)) == -1)
+    @constraint(model, sum(flow[i] for i in n_in_indices(A, nt)) == -1)
 
     for n in 1:n_nodes
         if n != ns && n != nt
-            @constraint(ldr,
+            @constraint(model,
                 sum(flow[i] for i in n_out_indices(A, n)) ==
                 sum(flow[i] for i in n_in_indices(A, n))
             )
         end
     end
-
-    @objective(ldr, Min, sum(ξ[i] * flow[i] for i in 1:n_edges))
-
-    optimize!(ldr)
-
-    return objective_value(ldr)
+    total = 0
+    for sample in samples_list
+        @objective(model, Min, sum(sample[i] * flow[i] for i in 1:n_edges))
+        optimize!(model)
+        
+        total += objective_value(model)
+    end
+    return total/length(samples_list)
 end

@@ -172,6 +172,7 @@ function update_breakpoints!(pwldr::PWLDR, weight_vec::Vector{Vector{Float64}})
     model = pwldr.model
     if haskey(pwldr.W_constraints, :upper_ineq)
         delete_matrix_constraint(model, pwldr.W_constraints[:upper_ineq])
+        delete(model, pwldr.h_constraints[:upper_ineq])
         ΛSu = model[:ΛSu]
         Su = model[:Su]
         pwldr.W_constraints[:upper_ineq] = @constraint(model, ΛSu * W .== Su)
@@ -180,6 +181,7 @@ function update_breakpoints!(pwldr::PWLDR, weight_vec::Vector{Vector{Float64}})
 
     if haskey(pwldr.W_constraints, :lower_ineq)
         delete_matrix_constraint(model, pwldr.W_constraints[:lower_ineq])
+        delete(model, pwldr.h_constraints[:lower_ineq])
         ΛSl = model[:ΛSl]
         Sl = model[:Sl]
         pwldr.W_constraints[:lower_ineq] = @constraint(model, ΛSl * W .== Sl)
@@ -188,6 +190,7 @@ function update_breakpoints!(pwldr::PWLDR, weight_vec::Vector{Vector{Float64}})
 
     if haskey(pwldr.W_constraints, :upper_x)
         delete_matrix_constraint(model, pwldr.W_constraints[:upper_x])
+        delete(model, pwldr.h_constraints[:upper_x])
         ΛSxu = model[:ΛSxu]
         Sxu = model[:Sxu]
         pwldr.W_constraints[:upper_x] = @constraint(model, ΛSxu.data * W .== Sxu.data)
@@ -196,10 +199,11 @@ function update_breakpoints!(pwldr::PWLDR, weight_vec::Vector{Vector{Float64}})
 
     if haskey(pwldr.W_constraints, :lower_x)
         delete_matrix_constraint(model, pwldr.W_constraints[:lower_x])
+        delete(model, pwldr.h_constraints[:lower_x])
         ΛSxl = model[:ΛSxl]
         Sxl = model[:Sxl]
         pwldr.W_constraints[:lower_x] = @constraint(model, ΛSxl.data * W .== Sxl.data)
-        pwldr.W_constraints[:lower_x] = @constraint(model, ΛSxl.data * h .>= 0)
+        pwldr.h_constraints[:lower_x] = @constraint(model, ΛSxl.data * h .>= 0)
     end
 
     X = model[:X]
@@ -213,22 +217,9 @@ function evaluate_sample(PWVR_list, X, C, samples)
     #Change evaluate to correct sample order
     ξ = [1.0]
     for (pwvr, sp) in zip(PWVR_list, samples)
-        η_vec = pwvr.η_vec
-        ξ_ext = zeros(pwvr.n_breakpoints + 1)
-        value_cummulative = η_vec[2]
-        for i in 1:(pwvr.n_breakpoints + 1)
-            diff = η_vec[i + 2] - η_vec[i + 1]
-            value_cummulative += diff
-            if value_cummulative <= sp
-                ξ_ext[i] = value_cummulative - sum(ξ_ext)
-            else
-                ξ_ext[i] = sp - sum(ξ_ext)
-                break
-            end
-        end
+        ξ_ext = sample_vector(pwvr, sp)
         append!(ξ, ξ_ext)
     end
-
     value_ret = (C * ξ)' * (X * ξ)
     return value_ret
 end
@@ -239,10 +230,8 @@ end
 
 function PWLDR(ldr_model::LinearDecisionRules.LDRModel,
                 optimizer,
-                distribution_constructor)
-
-    #Get the ideal number of segments
-    n_segments_vec = _segments_number(ldr_model)
+                distribution_constructor,
+                n_segments_vec = _segments_number(ldr_model))
     
     #Build the initial PWLDR problem
     pwldr_model = _build_problem(ldr_model, n_segments_vec,

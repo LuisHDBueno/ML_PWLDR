@@ -47,4 +47,7 @@ optimize!(model)
 C = value.(model.model.ext[:C])
 X = value.(model.model[:X])
 
-@show - evaluate_sample(model.PWVR_list, X, C, [100.0])
+black_box!(model)
+optimize!(model)
+
+@show - objective_value(model)

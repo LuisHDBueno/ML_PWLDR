@@ -9,7 +9,6 @@ function _local_search_η_vec!(
     pwldr_model::PWLDR,
     weight_vec::Vector{Vector{Float64}},
     index::Int;
-    step = 0.01
 )
     value = _evaluate_local_search(pwldr_model)
 
@@ -23,13 +22,13 @@ function _local_search_η_vec!(
 
         for i in 2:(size - 1)
             weight_copy = copy(weight)
-
+            step = 1/(length(weight) * 10)
             if (weight[i] - step > 0)
                 weight_copy[i] = weight[i] - step
                 weight_vec[index] = weight_copy
                 update_breakpoints!(pwldr_model, weight_vec)
                 value_lower = _evaluate_local_search(pwldr_model)
-                if value_lower > value
+                if value_lower < value
                     improved = true
                     value = value_lower
                     weight = weight_copy
@@ -43,7 +42,7 @@ function _local_search_η_vec!(
 
                 update_breakpoints!(pwldr_model, weight_vec)
                 value_upper = _evaluate_local_search(pwldr_model)
-                if value_upper > value
+                if value_upper < value
                     improved = true
                     value = value_upper
                     weight = weight_copy

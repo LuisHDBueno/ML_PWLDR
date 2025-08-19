@@ -27,7 +27,7 @@ function black_box!(
             push!(η_weights_list, (0.01, 1.0))
         end
     end
-    max_eval = 20 * sum(pwldr_model.n_segments_vec)
+    max_eval = 100
     obj_func = hyperparam -> _evaluate_segments(hyperparam, pwldr_model)
     bboptimize(obj_func, SearchRange = η_weights_list, NumDimensions = length(η_weights_list), MaxFuncEvals = max_eval)
 end

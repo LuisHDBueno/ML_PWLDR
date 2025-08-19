@@ -45,7 +45,7 @@ function update_breakpoints!(variable::PWVR, new_weight::Vector{Float64})
     w_norm = new_weight ./ sum(new_weight)
     variable.weight = w_norm
     for i in 1:variable.n_breakpoints
-        variable.η_vec[i + 1] = variable.η_vec[i] + variable.range * variable.weight[i]
+        variable.η_vec[i + 2] = variable.η_vec[i+1] + variable.range * variable.weight[i]
     end
 end
 
