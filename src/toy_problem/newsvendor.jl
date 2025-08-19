@@ -8,6 +8,8 @@ using Random
 using LinearDecisionRules
 using LinearAlgebra
 include("../pwldr.jl")
+include("../segments/opt_segments.jl")
+include("../segments//displace_segments_models/local_search.jl")
 
 buy_cost = 10
 return_value = 8
@@ -36,16 +38,16 @@ set_silent(ldr)
     - sell_value * sell
 )
 optimize!(ldr)
-@show objective_value(ldr)
+@show - objective_value(ldr)
 
-model = PWLDR(ldr, HiGHS.Optimizer)
+model = PWLDR(ldr, HiGHS.Optimizer, Uniform)
 optimize!(model)
 @show - objective_value(model)
-@show value.(model[:X])
-@show model.PWVR_list[1].η_vec
 
 C = value.(model.model.ext[:C])
 X = value.(model.model[:X])
 
-@show - evaluate_sample(model.PWVR_list, X, C, [80.0])
+black_box!(model)
+optimize!(model)
 
+@show - objective_value(model)
