@@ -1,6 +1,7 @@
 function _evaluate_segments(
     weights_limits_list::Vector{Float64},
-    pwldr_model::PWLDR)
+    pwldr_model::PWLDR,
+    sense::Int)
 
     weight_vec = Vector{Vector{Float64}}()
     weight_index = 1
@@ -14,7 +15,7 @@ function _evaluate_segments(
     update_breakpoints!(pwldr_model, weight_vec)
     optimize!(pwldr_model)
 
-    return objective_value(pwldr_model)
+    return sense * objective_value(pwldr_model)
 end
 
 function black_box!(
@@ -27,7 +28,14 @@ function black_box!(
             push!(η_weights_list, (0.01, 1.0))
         end
     end
+
+    if pwldr_model.model.ext[:sense] == MOI.MIN_SENSE
+        sense = 1
+    else
+        sense = -1
+    end
     max_eval = 100
-    obj_func = hyperparam -> _evaluate_segments(hyperparam, pwldr_model)
-    bboptimize(obj_func, SearchRange = η_weights_list, NumDimensions = length(η_weights_list), MaxFuncEvals = max_eval)
+    obj_func = hyperparam -> _evaluate_segments(hyperparam, pwldr_model, sense)
+    res = bboptimize(obj_func, SearchRange = η_weights_list, MaxFuncEvals = max_eval)
+    _evaluate_segments(best_candidate(res), pwldr_model, sense)
 end

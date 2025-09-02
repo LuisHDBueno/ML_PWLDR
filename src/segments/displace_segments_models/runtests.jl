@@ -43,7 +43,7 @@ function shipment_planning_test(dist_list, optimizer, n_samples)
 
     # Fixed because it doesn't affect the uncertainty
     n_products = 10
-    n_clients_list = [2, 5]
+    n_clients_list = [2, 3, 4, 5]
     n_segments = [2, 3, 4, 5]
 
     displace_function = [("black_box", black_box!),
@@ -60,8 +60,10 @@ function shipment_planning_test(dist_list, optimizer, n_samples)
             n_segments = Int[],
             displace_func = String[],
             rp_ldr = Float64[],
+            rp_pwldr_uniform = Float64[],
             rp_pwldr = Float64[],
             eev_ldr = Float64[],
+            eev_pwldr_uniform = Float64[],
             eev_pwldr = Float64[],
             ws = Float64[],
             opt_time = Float64[]
@@ -69,53 +71,63 @@ function shipment_planning_test(dist_list, optimizer, n_samples)
     end
 
     println("Init shipment planning")
-    for (func_name, func) in displace_function
-        for (dist_name, dist) in dist_list
-            for n_clients in n_clients_list
-                # Evaluate metrics at orginial model
-                samples_list = eachcol(rand(dist, n_clients, n_samples))
-            
-                #LDR Problem
-                distribution_constructor = (a, b)-> truncated(dist, a, b)
-                ldr, prod_cost_1, prod_cost_2, client_cost = shipment_planning_ldr(n_products, n_clients, dist, optimizer)
-                optimize!(ldr)
+    for (dist_name, dist) in dist_list
+        for n_clients in n_clients_list
 
-                rp_ldr = objective_value(ldr)
-                eev_ldr = eev_ldr_calc(ldr, samples_list)
-                ws = shipment_planning_ws(n_products, n_clients, prod_cost_1, prod_cost_2, client_cost, samples_list, optimizer)
-                
-                #Piecewise PDR Problem
-                for seg in n_segments
+            # Evaluate metrics at orginial model
+            samples_list = eachcol(rand(dist, n_clients, n_samples))
+        
+            #LDR Problem
+            distribution_constructor = (a, b)-> truncated(dist, a, b)
+            ldr, prod_cost_1, prod_cost_2, client_cost = shipment_planning_ldr(n_products, n_clients, dist, optimizer)
+            optimize!(ldr)
+
+            rp_ldr = objective_value(ldr)
+            eev_ldr = eev_ldr_calc(ldr, samples_list)
+            ws = shipment_planning_ws(n_products, n_clients, prod_cost_1, prod_cost_2, client_cost, samples_list, optimizer)
+            
+            #Piecewise PDR Problem
+            for seg in n_segments
+
+                # Uniform segments
+                n_segments_vec = _segments_number(ldr; fix_n = seg)
+                pwldr_model = PWLDR(ldr, optimizer, distribution_constructor, n_segments_vec)
+                optimize!(pwldr_model)
+
+                rp_pwldr_uniform = objective_value(pwldr_model)
+                eev_pwldr_uniform = eev_pwldr_calc(pwldr_model, samples_list)
+
+                for (func_name, func) in displace_function
                     if any((results_df.dist .== dist_name) .&
                         (results_df.n_clients .== n_clients) .&
                         (results_df.displace_func .== func_name) .&
                         (results_df.n_segments .== seg))
                         println("Already Processed dist=$dist_name, n_clients=$n_clients, func=$func_name, n_segments=$seg")
                         continue
-                    end  
-                    n_segments_vec = _segments_number(ldr; fix_n = seg)
-                    pwldr_model = PWLDR(ldr, optimizer, distribution_constructor, n_segments_vec)
+                    end
+                    
                     init_time = time()
                     func(pwldr_model)
                     end_time = time()
-
+                    
                     optimize!(pwldr_model)
                     rp_pwldr = objective_value(pwldr_model)
-
                     eev_pwldr = eev_pwldr_calc(pwldr_model, samples_list)
 
                     push!(results_df, (
-                        dist = dist_name,
-                        n_clients = n_clients,
-                        n_segments = seg,
-                        displace_func = func_name,
-                        rp_ldr = rp_ldr,
-                        rp_pwldr = rp_pwldr,
-                        eev_ldr = eev_ldr,
-                        eev_pwldr = eev_pwldr,
-                        ws = ws,
-                        opt_time = end_time - init_time
-                    ), promote = true)
+                            dist = dist_name,
+                            n_clients = n_clients,
+                            n_segments = seg,
+                            displace_func = func_name,
+                            rp_ldr = rp_ldr,
+                            rp_pwldr_uniform = rp_pwldr_uniform,
+                            rp_pwldr = rp_pwldr,
+                            eev_ldr = eev_ldr,
+                            eev_pwldr_uniform = eev_pwldr_uniform,
+                            eev_pwldr = eev_pwldr,
+                            ws = ws,
+                            opt_time = end_time - init_time
+                        ), promote = true)
                     println("Checkpoint: dist=$dist_name, n_clients=$n_clients, func=$func_name, n_segments=$seg")
                     CSV.write(checkpoint_file, results_df)
                 end
@@ -127,7 +139,7 @@ end
 function shortest_path_test(dist_list, optimizer, n_samples)
 
     n_nodes_list = [5, 10]
-    n_edges_list = [15, 30]
+    n_edges_list = [10, 20]
     n_segments = [2, 3, 4, 5]
     
     displace_function = [("black_box", black_box!),
@@ -145,8 +157,10 @@ function shortest_path_test(dist_list, optimizer, n_samples)
             n_segments = Int[],
             displace_func = String[],
             rp_ldr = Float64[],
+            rp_pwldr_uniform = Float64[],
             rp_pwldr = Float64[],
             eev_ldr = Float64[],
+            eev_pwldr_uniform = Float64[],
             eev_pwldr = Float64[],
             ws = Float64[],
             opt_time = Float64[]
@@ -154,23 +168,33 @@ function shortest_path_test(dist_list, optimizer, n_samples)
     end
 
     println("Init shortest path")
-    for (func_name, func) in displace_function
-        for (dist_name, dist) in dist_list
-            for (n_nodes, n_edges) in zip(n_nodes_list, n_edges_list)
-                # Evaluate metrics at orginial model
-                samples_list = eachcol(rand(dist, n_edges, n_samples))
+    for (dist_name, dist) in dist_list
+        for (n_nodes, n_edges) in zip(n_nodes_list, n_edges_list)
 
-                #LDR Problem
-                distribution_constructor = (a, b)-> truncated(dist, a, b)
-                ldr, A = shortest_path_ldr(n_nodes, n_edges, 1, n_nodes, dist, optimizer)
-                optimize!(ldr)
+            # Evaluate metrics at orginial model
+            samples_list = eachcol(rand(dist, n_edges, n_samples))
 
-                rp_ldr = objective_value(ldr)
-                eev_ldr = eev_ldr_calc(ldr, samples_list)
-                ws = shortest_path_ws(A, n_edges, n_nodes, samples_list, 1, n_nodes, optimizer)
+            #LDR Problem
+            distribution_constructor = (a, b)-> truncated(dist, a, b)
+            ldr, A = shortest_path_ldr(n_nodes, n_edges, 1, n_nodes, dist, optimizer)
+            optimize!(ldr)
 
-                #Piecewise PDR Problem
-                for seg in n_segments
+            rp_ldr = objective_value(ldr)
+            eev_ldr = eev_ldr_calc(ldr, samples_list)
+            ws = shortest_path_ws(A, n_edges, n_nodes, samples_list, 1, n_nodes, optimizer)
+
+            #Piecewise PDR Problem
+            for seg in n_segments
+
+                # Uniform segments
+                n_segments_vec = _segments_number(ldr; fix_n = seg)
+                pwldr_model = PWLDR(ldr, optimizer, distribution_constructor, n_segments_vec)
+                optimize!(pwldr_model)
+
+                rp_pwldr_uniform = objective_value(pwldr_model)
+                eev_pwldr_uniform = eev_pwldr_calc(pwldr_model, samples_list)
+
+                for (func_name, func) in displace_function
                     if any((results_df.dist .== dist_name) .&
                         (results_df.n_nodes .== n_nodes) .&
                         (results_df.n_edges .== n_edges) .&
@@ -179,30 +203,30 @@ function shortest_path_test(dist_list, optimizer, n_samples)
                         println("Already Processed dist=$dist_name, n_nodes=$n_nodes, func=$func_name, n_segments=$seg")
                         continue
                     end
-                    
-                    n_segments_vec = _segments_number(ldr; fix_n = seg)
-                    pwldr_model = PWLDR(ldr, optimizer, distribution_constructor, n_segments_vec)
+
                     init_time = time()
                     func(pwldr_model)
                     end_time = time()
+
                     optimize!(pwldr_model)
                     rp_pwldr = objective_value(pwldr_model)
-
                     eev_pwldr = eev_pwldr_calc(pwldr_model, samples_list)
 
                     push!(results_df, (
-                        dist = dist_name,
-                        n_nodes = n_nodes,
-                        n_edges = n_edges,
-                        n_segments = seg,
-                        displace_func = func_name,
-                        rp_ldr = rp_ldr,
-                        rp_pwldr = rp_pwldr,
-                        eev_ldr = eev_ldr,
-                        eev_pwldr = eev_pwldr,
-                        ws = ws,
-                        opt_time = end_time - init_time
-                    ), promote = true)
+                            dist = dist_name,
+                            n_nodes = n_nodes,
+                            n_edges = n_edges,
+                            n_segments = seg,
+                            displace_func = func_name,
+                            rp_ldr = rp_ldr,
+                            rp_pwldr_uniform = rp_pwldr_uniform,
+                            rp_pwldr = rp_pwldr,
+                            eev_ldr = eev_ldr,
+                            eev_pwldr_uniform = eev_pwldr_uniform,
+                            eev_pwldr = eev_pwldr,
+                            ws = ws,
+                            opt_time = end_time - init_time
+                        ), promote = true)
                     println("Checkpoint: dist=$dist_name, n_edges=$n_edges, n_nodes=$n_nodes, func=$func_name, n_segments=$seg")
                     CSV.write(checkpoint_file, results_df)
                 end

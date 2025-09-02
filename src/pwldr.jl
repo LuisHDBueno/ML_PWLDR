@@ -144,6 +144,7 @@ function _build_problem(
     else
         @objective(model, Max, obj)
     end
+    model.ext[:sense] = ldr_model.ext[:_LDR_sense]
 
     return PWLDR(model, pwvr_list, n_segments_vec, W_constraints, h_constraints)
 end
@@ -210,7 +211,12 @@ function update_breakpoints!(pwldr::PWLDR, weight_vec::Vector{Vector{Float64}})
     C = model.ext[:C]
     
     M = _build_second_moment_matrix(pwldr.n_segments_vec, pwldr.PWVR_list)
-    @objective(model, Min, LinearAlgebra.tr(C' * X * M))
+
+    if model.ext[:sense] == MOI.MIN_SENSE
+        @objective(model, Min, LinearAlgebra.tr(C' * X * M))
+    else
+        @objective(model, Max, LinearAlgebra.tr(C' * X * M))
+    end
 end
 
 function evaluate_sample(PWVR_list, X, C, samples)

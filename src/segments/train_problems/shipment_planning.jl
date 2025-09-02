@@ -20,15 +20,15 @@ function shipment_planning_ldr(n_products::Int, n_clients::Int, distribution, op
 
     # restrição: atender a demanda de cada cliente
     for j in 1:n_clients
-        @constraint(ldr, sum(sell[i, j] for i in 1:n_products) >= demand[j])
+        @constraint(ldr, sum(sell[i, j] for i in 1:n_products) <= demand[j])
     end
     for i in 1:n_products
         @constraint(ldr, sum(sell[i, j] for j in 1:n_clients) <= buy_1[i] + buy_2[i])
     end
 
-    @objective(ldr, Min,
-                + sum(prod_cost_1 .* buy_1)
-                + sum(prod_cost_2 .* buy_2)
+    @objective(ldr, Max,
+                - sum(prod_cost_1 .* buy_1)
+                - sum(prod_cost_2 .* buy_2)
                 + sum(sum(client_cost .* sell)))
 
     return ldr, prod_cost_1, prod_cost_2, client_cost
@@ -51,12 +51,12 @@ function shipment_planning_ws(n_products, n_clients, prod_cost_1, prod_cost_2, c
 
     demand_constraints = Vector{ConstraintRef}(undef, n_clients)
     for j in 1:n_clients
-        demand_constraints[j] = @constraint(model, sum(sell[i, j] for i in 1:n_products) >= 0.0)
+        demand_constraints[j] = @constraint(model, sum(sell[i, j] for i in 1:n_products) <= 0.0)
     end
 
-    @objective(model, Min,
-                + sum(prod_cost_1 .* buy_1)
-                + sum(prod_cost_2 .* buy_2)
+    @objective(model, Max,
+                - sum(prod_cost_1 .* buy_1)
+                - sum(prod_cost_2 .* buy_2)
                 + sum(sum(client_cost .* sell)))
     total = 0
     for sample in samples_list
