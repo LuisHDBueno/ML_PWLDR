@@ -32,22 +32,22 @@ set_silent(ldr)
 @constraint(ldr, sell + ret <= buy)
 @constraint(ldr, sell <= demand)
 
-@objective(ldr, Min,
-    buy_cost * buy
-    - return_value * ret
-    - sell_value * sell
+@objective(ldr, Max,
+    - buy_cost * buy
+    + return_value * ret
+    + sell_value * sell
 )
 optimize!(ldr)
 @show - objective_value(ldr)
 
 model = PWLDR(ldr, HiGHS.Optimizer, Uniform)
 optimize!(model)
-@show - objective_value(model)
+@show objective_value(model)
 
 C = value.(model.model.ext[:C])
 X = value.(model.model[:X])
 
-black_box!(model)
+local_search!(model)
 optimize!(model)
 
-@show - objective_value(model)
+@show objective_value(model)

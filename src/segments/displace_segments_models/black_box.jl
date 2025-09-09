@@ -34,7 +34,7 @@ function black_box!(
     else
         sense = -1
     end
-    max_eval = 100
+    max_eval = 200
     obj_func = hyperparam -> _evaluate_segments(hyperparam, pwldr_model, sense)
     res = bboptimize(obj_func, SearchRange = η_weights_list, MaxFuncEvals = max_eval)
     _evaluate_segments(best_candidate(res), pwldr_model, sense)

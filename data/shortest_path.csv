@@ -1,2 +1,0 @@
-dist,n_nodes,n_edges,n_segments,displace_func,rp_ldr,rp_pwldr_uniform,rp_pwldr,eev_ldr,eev_pwldr_uniform,eev_pwldr,ws,opt_time
-"Unif 10,90",5,15,2,black_box,25.0,0.0,-13469.833814182675,24.826337193969078,0.0,1677.7686647115981,44.459475350668036,4.9709999561309814
