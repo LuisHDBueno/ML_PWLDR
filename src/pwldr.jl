@@ -25,17 +25,59 @@ struct PWLDR
     h_constraints::Dict{Symbol, Vector{JuMP.ConstraintRef}}
 end
 
+function flatten_distributions_in_order(
+    ldr_model::LinearDecisionRules.LDRModel
+)
+    scalar_distributions = ldr_model.cache_model.scalar_distributions
+    vector_distributions = ldr_model.cache_model.vector_distributions
+    uncertainty_to_distribution = ldr_model.cache_model.uncertainty_to_distribution
+
+    variables = all_variables(ldr_model.cache_model.model)
+    all_distributions = Vector{Distribution}()
+
+    scalar_idx = 1
+    vector_idx = 1
+    temp = []
+
+    for var in variables
+        if !(var in keys(uncertainty_to_distribution))
+            continue
+        end
+        dist_idx, inner_idx = uncertainty_to_distribution[var]
+
+        if inner_idx == 0
+            push!(temp, (dist_idx, scalar_distributions[scalar_idx]))
+            scalar_idx += 1
+        else
+            push!(temp, (dist_idx, vector_distributions[vector_idx].v[inner_idx]))
+            if inner_idx == length(vector_distributions[vector_idx].v)
+                vector_idx += 1
+            end
+        end
+    end
+
+    # Agora ordena pelo dist_idx
+    sorted_temp = sort(temp, by = x -> x[1])
+
+    # Extrai apenas as distribuições e adiciona na ordem correta
+    for (_, dist) in sorted_temp
+        push!(all_distributions, dist)
+    end
+
+    return all_distributions
+end
+
 function _build_init_pwvr_list(
     n_segments_vec::Vector{Int},
     η_min::Vector{Float64},
     η_max::Vector{Float64},
-    distribution_constructor
+    distribution_vec::Vector{Distribution}
     )
     pwvr_list = Vector{PWVR}()
     for i in 1:length(η_min)
         n = n_segments_vec[i]
         push!(pwvr_list,
-                PWVR(distribution_constructor(η_min[i], η_max[i]),
+                PWVR(truncated(distribution_vec[i], η_min[i], η_max[i]),
                         η_min[i],
                         η_max[i],
                         fill(1/n, Int(n)))
@@ -47,7 +89,6 @@ end
 function _build_problem(
     ldr_model::LinearDecisionRules.LDRModel,
     n_segments_vec::Vector{Int},
-    distribution_constructor,
     optimizer
 )
     ABC = ldr_model.ext[:_LDR_ABC]
@@ -55,8 +96,9 @@ function _build_problem(
 
     η_min = ABC.lb
     η_max = ABC.ub
-    pwvr_list = _build_init_pwvr_list(n_segments_vec, η_min, η_max,
-                                         distribution_constructor)
+
+    distribution_vec = flatten_distributions_in_order(ldr_model)
+    pwvr_list = _build_init_pwvr_list(n_segments_vec, η_min, η_max, distribution_vec)
 
     # Model Init
     model = Model(optimizer)
@@ -239,12 +281,10 @@ end
 
 function PWLDR(ldr_model::LinearDecisionRules.LDRModel,
                 optimizer,
-                distribution_constructor,
                 n_segments_vec = _segments_number(ldr_model))
     
     #Build the initial PWLDR problem
-    pwldr_model = _build_problem(ldr_model, n_segments_vec,
-                                    distribution_constructor, optimizer)
+    pwldr_model = _build_problem(ldr_model, n_segments_vec, optimizer)
 
     return pwldr_model
 end
