@@ -59,6 +59,7 @@ function _build_problem(
     # Model Init
     model = Model(optimizer)
     set_silent(model)
+    model.ext[:first_stage_index] = first_stage_index
 
     dim_X = size(ABC.Ae, 2)
     dim_ξ = Int(sum(n_segments_vec) + 1)
@@ -111,7 +112,7 @@ function _build_problem(
         @constraint(model, X[idxs_xu,1] .+ Sxu[idxs_xu,1] .== ABC.xu[idxs_xu])
         @constraint(model, X[idxs_xu,2:end] .+ Sxu[idxs_xu,2:end] .== 0)
 
-        @variable(model, ΛSxu[idxs_xu,1:nW] >= 0)
+        @variable(model, ΛSxu[idxs_xu,1:nW] .>= 0)
 
         #W, h dependence
         W_constraints[:upper_x] = @constraint(model, ΛSxu.data * W .== Sxu.data)
@@ -125,7 +126,7 @@ function _build_problem(
         @constraint(model, X[idxs_xl,1] .- Sxl[idxs_xl,1] .== ABC.xl[idxs_xl])
         @constraint(model, X[idxs_xl,2:end] .- Sxl[idxs_xl,2:end] .== 0)
 
-        @variable(model, ΛSxl[idxs_xl,1:nW] >= 0)
+        @variable(model, ΛSxl[idxs_xl,1:nW] .>= 0)
         
         #W, h dependence
         W_constraints[:lower_x] = @constraint(model, ΛSxl.data * W .== Sxl.data)
