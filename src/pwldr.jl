@@ -1,3 +1,5 @@
+module PiecewiseLDR
+
 using Distributions
 using Expectations
 using JuMP
@@ -247,3 +249,4 @@ function PWLDR(ldr_model::LinearDecisionRules.LDRModel,
     return pwldr_model
 end
 
+end #End module
