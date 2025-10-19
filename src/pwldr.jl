@@ -88,11 +88,11 @@ end
 
 function _build_problem(
     ldr_model::LinearDecisionRules.LDRModel,
-    n_segments_vec::Vector{Int},
-    optimizer
+    n_segments_vec::Vector{Int}
 )
     ABC = ldr_model.ext[:_LDR_ABC]
     first_stage_index = ldr_model.ext[:_LDR_first_stage_indices]
+    optimizer = ldr_model.solver
 
     η_min = ABC.lb
     η_max = ABC.ub
@@ -280,11 +280,10 @@ function getindex(model::PWLDR, indice::Symbol)
 end
 
 function PWLDR(ldr_model::LinearDecisionRules.LDRModel,
-                optimizer,
                 n_segments_vec = _segments_number(ldr_model))
     
     #Build the initial PWLDR problem
-    pwldr_model = _build_problem(ldr_model, n_segments_vec, optimizer)
+    pwldr_model = _build_problem(ldr_model, n_segments_vec)
 
     return pwldr_model
 end

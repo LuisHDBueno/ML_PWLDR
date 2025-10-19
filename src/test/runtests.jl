@@ -52,7 +52,7 @@ function test_build_ldr()
     optimize!(ldr)
 
     n_segments_vec = PiecewiseLDR._segments_number(ldr; fix_n = 1)
-    pwldr = PiecewiseLDR.PWLDR(ldr, optimizer, n_segments_vec)
+    pwldr = PiecewiseLDR.PWLDR(ldr, n_segments_vec)
 
     optimize!(pwldr)
 
@@ -109,7 +109,7 @@ function test_build_vector_distribution()
     optimize!(ldr)
 
     n_segments_vec = PiecewiseLDR._segments_number(ldr; fix_n = 1)
-    pwldr = PiecewiseLDR.PWLDR(ldr, optimizer, n_segments_vec)
+    pwldr = PiecewiseLDR.PWLDR(ldr, n_segments_vec)
 
     optimize!(pwldr)
 
@@ -151,7 +151,7 @@ function test_build_pwldr()
     )
     optimize!(ldr)
 
-    pwldr = PiecewiseLDR.PWLDR(ldr, optimizer)
+    pwldr = PiecewiseLDR.PWLDR(ldr)
     optimize!(pwldr)
 
     @test objective_value(ldr) <= objective_value(pwldr)

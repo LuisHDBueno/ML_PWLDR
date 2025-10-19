@@ -40,7 +40,7 @@ set_silent(ldr)
 optimize!(ldr)
 @show - objective_value(ldr)
 
-model = PWLDR(ldr, HiGHS.Optimizer, Uniform)
+model = PWLDR(ldr)
 optimize!(model)
 @show objective_value(model)
 
