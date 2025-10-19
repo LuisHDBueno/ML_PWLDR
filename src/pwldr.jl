@@ -17,12 +17,15 @@ include("canonical_transform.jl")
 include("second_moment.jl")
 include("segments/segments_number.jl")
 
-struct PWLDR
+mutable struct PWLDR
     model::JuMP.Model
+    ldr_model::LinearDecisionRules.LDRModel
     PWVR_list::Vector{PWVR}
     n_segments_vec::Vector{Int}
     W_constraints::Dict{Symbol, Matrix{JuMP.ConstraintRef}}
     h_constraints::Dict{Symbol, Vector{JuMP.ConstraintRef}}
+    reset_model::Bool
+    uncertainty_to_distribution
 end
 
 function flatten_distributions_in_order(
@@ -87,12 +90,12 @@ function _build_init_pwvr_list(
 end
 
 function _build_problem(
-    ldr_model::LinearDecisionRules.LDRModel,
-    n_segments_vec::Vector{Int}
+    pwldr::PWLDR
 )
+    ldr_model = pwldr.ldr_model
+    n_segments_vec = pwldr.n_segments_vec
     ABC = ldr_model.ext[:_LDR_ABC]
     first_stage_index = ldr_model.ext[:_LDR_first_stage_indices]
-    optimizer = ldr_model.solver
 
     η_min = ABC.lb
     η_max = ABC.ub
@@ -101,7 +104,7 @@ function _build_problem(
     pwvr_list = _build_init_pwvr_list(n_segments_vec, η_min, η_max, distribution_vec)
 
     # Model Init
-    model = Model(optimizer)
+    model = pwldr.model
     set_silent(model)
     model.ext[:first_stage_index] = first_stage_index
 
@@ -191,11 +194,20 @@ function _build_problem(
     end
     model.ext[:sense] = ldr_model.ext[:_LDR_sense]
 
-    return PWLDR(model, pwvr_list, n_segments_vec, W_constraints, h_constraints)
+    # Fill pwldr struct
+    pwldr.PWVR_list = pwvr_list
+    pwldr.W_constraints = W_constraints
+    pwldr.h_constraints = h_constraints
+    pwldr.reset_model = false
 end
 
-function  optimize!(model::PWLDR)
-    JuMP.optimize!(model.model)
+function optimize!(model::PWLDR)
+    if model.reset_model
+        _build_problem(model)
+        JuMP.optimize!(model.model)
+    else
+        JuMP.optimize!(model.model)
+    end
 end
 
 function objective_value(model::PWLDR)
@@ -279,13 +291,21 @@ function getindex(model::PWLDR, indice::Symbol)
     return getindex(model.model, indice)
 end
 
-function PWLDR(ldr_model::LinearDecisionRules.LDRModel,
-                n_segments_vec = _segments_number(ldr_model))
+function PWLDR(ldr_model::LinearDecisionRules.LDRModel)
     
-    #Build the initial PWLDR problem
-    pwldr_model = _build_problem(ldr_model, n_segments_vec)
+    n_segments_vec = _segments_number(ldr_model)
 
-    return pwldr_model
+    #Build empty model
+    empty_model = PWLDR(JuMP.Model(ldr_model.solver),
+                        ldr_model,
+                        PWVR[],
+                        n_segments_vec,
+                        Dict{Symbol, Matrix{JuMP.ConstraintRef}}(),
+                        Dict{Symbol, Vector{JuMP.ConstraintRef}}(),
+                        true,
+                        ldr_model.cache_model.uncertainty_to_distribution)
+
+    return empty_model
 end
 
 end #End module

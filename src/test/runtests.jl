@@ -51,8 +51,7 @@ function test_build_ldr()
     )
     optimize!(ldr)
 
-    n_segments_vec = PiecewiseLDR._segments_number(ldr; fix_n = 1)
-    pwldr = PiecewiseLDR.PWLDR(ldr, n_segments_vec)
+    pwldr = PiecewiseLDR.PWLDR(ldr)
 
     optimize!(pwldr)
 
@@ -108,8 +107,7 @@ function test_build_vector_distribution()
     )
     optimize!(ldr)
 
-    n_segments_vec = PiecewiseLDR._segments_number(ldr; fix_n = 1)
-    pwldr = PiecewiseLDR.PWLDR(ldr, n_segments_vec)
+    pwldr = PiecewiseLDR.PWLDR(ldr)
 
     optimize!(pwldr)
 
@@ -151,16 +149,17 @@ function test_build_pwldr()
     )
     optimize!(ldr)
 
+    n_breakpoints = 2
     pwldr = PiecewiseLDR.PWLDR(ldr)
+    PiecewiseLDR.set_breakpoint!(pwldr, demand, n_breakpoints)
     optimize!(pwldr)
 
     @test objective_value(ldr) <= objective_value(pwldr)
     
-    # 2 breakpoint equals 3 segments
     LinearDecisionRules.set_attribute(
             demand,
             LinearDecisionRules.BreakPoints(),
-            2,)
+            n_breakpoints,)
     optimize!(ldr)
     
     @test objective_value(ldr) == objective_value(pwldr)
