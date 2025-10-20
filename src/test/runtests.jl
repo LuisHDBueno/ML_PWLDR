@@ -244,6 +244,93 @@ function test_update_breakpoints()
 
 end
 
+function test_black_box()
+    optimizer = HiGHS.Optimizer
+    buy_cost = 10
+    return_value = 8
+    sell_value = 15
+
+    demand_max = 120
+    demand_min = 80
+
+    ldr = LinearDecisionRules.LDRModel(HiGHS.Optimizer)
+    set_silent(ldr)
+
+    @variable(ldr, buy >= 0, LinearDecisionRules.FirstStage)
+    @variable(ldr, sell >= 0)
+    @variable(ldr, ret >= 0)
+    @variable(ldr, demand in LinearDecisionRules.Uncertainty(
+            distribution = Uniform(demand_min, demand_max)
+        )
+    )
+
+    @constraint(ldr, sell + ret <= buy)
+    @constraint(ldr, sell <= demand)
+
+    @objective(ldr, Max,
+        - buy_cost * buy
+        + return_value * ret
+        + sell_value * sell
+    )
+    optimize!(ldr)
+
+    n_breakpoints = 2
+    pwldr = PiecewiseLDR.PWLDR(ldr)
+    PiecewiseLDR.set_breakpoint!(pwldr, demand, n_breakpoints)
+    optimize!(pwldr)
+    before_opt_displace = objective_value(pwldr)
+
+    PiecewiseLDR.black_box!(pwldr)
+    optimize!(pwldr)
+    after_opt_displace = objective_value(pwldr)
+
+    @test before_opt_displace <= after_opt_displace
+    
+end
+
+function test_local_search()
+    optimizer = HiGHS.Optimizer
+    buy_cost = 10
+    return_value = 8
+    sell_value = 15
+
+    demand_max = 120
+    demand_min = 80
+
+    ldr = LinearDecisionRules.LDRModel(HiGHS.Optimizer)
+    set_silent(ldr)
+
+    @variable(ldr, buy >= 0, LinearDecisionRules.FirstStage)
+    @variable(ldr, sell >= 0)
+    @variable(ldr, ret >= 0)
+    @variable(ldr, demand in LinearDecisionRules.Uncertainty(
+            distribution = Uniform(demand_min, demand_max)
+        )
+    )
+
+    @constraint(ldr, sell + ret <= buy)
+    @constraint(ldr, sell <= demand)
+
+    @objective(ldr, Max,
+        - buy_cost * buy
+        + return_value * ret
+        + sell_value * sell
+    )
+    optimize!(ldr)
+
+    n_breakpoints = 2
+    pwldr = PiecewiseLDR.PWLDR(ldr)
+    PiecewiseLDR.set_breakpoint!(pwldr, demand, n_breakpoints)
+    optimize!(pwldr)
+    before_opt_displace = objective_value(pwldr)
+
+    PiecewiseLDR.local_search!(pwldr)
+    optimize!(pwldr)
+    after_opt_displace = objective_value(pwldr)
+
+    @test before_opt_displace <= after_opt_displace
+end
+
 #End Module
 end
 
