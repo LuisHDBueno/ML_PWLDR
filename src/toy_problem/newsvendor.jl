@@ -1,15 +1,10 @@
 using Distributions
-using Plots
-using JSON
 using JuMP
 using HiGHS
-using Statistics
-using Random
 using LinearDecisionRules
-using LinearAlgebra
-include("../pwldr.jl")
-include("../segments/opt_segments.jl")
-include("../segments//displace_segments_models/local_search.jl")
+
+include("../PiecewiseLDR.jl")
+using .PiecewiseLDR
 
 buy_cost = 10
 return_value = 8
@@ -40,14 +35,14 @@ set_silent(ldr)
 optimize!(ldr)
 @show objective_value(ldr)
 
-model = PWLDR(ldr)
+model = PiecewiseLDR.PWLDR(ldr)
 optimize!(model)
 @show objective_value(model)
 
 C = value.(model.model.ext[:C])
 X = value.(model.model[:X])
 
-local_search!(model)
+PiecewiseLDR.local_search!(model)
 optimize!(model)
 
 @show objective_value(model)

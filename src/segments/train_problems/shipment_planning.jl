@@ -20,7 +20,7 @@ end
 
 function SPModelPWLDR(
     problem::ShipmentPlanning,
-    pwldr::PWLDR
+    pwldr::PiecewiseLDR.PWLDR
 )
     optimize!(pwldr)
     obj_value = objective_value(pwldr)

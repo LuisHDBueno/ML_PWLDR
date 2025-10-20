@@ -1,4 +1,20 @@
+"""
+    _build_second_moment_matrix(
+        n_segments::Vector{Int},
+        PWVR_list::Vector{PWVR}
+    )
+    
+    Build the second moment matrix associated to the PWVR_list
 
+    # Arguments
+    - n_segments::Vector{Int}: Vector that contains the number of segments
+        at each piecewise variable
+    - PWLR_list::Vector{PWVR}: Vector of all piecewise variables at the correct
+        order
+
+    # Returns
+    ::Matrix{Float64}: Second moment matrix
+"""
 function _build_second_moment_matrix(
     n_segments::Vector{Int},
     PWVR_list::Vector{PWVR}

@@ -1,12 +1,16 @@
-include("../../pwldr.jl")
-include("../train_problems/shipment_planning.jl")
-include("../train_problems/network_flow_planning.jl")
-include("black_box.jl")
-include("local_search.jl")
+include("../../PiecewiseLDR.jl")
+using .PiecewiseLDR
 
+using Distributions
+using JuMP
+using LinearDecisionRules
 using CSV
 using DataFrames
 using HiGHS
+using Random
+
+include("../train_problems/shipment_planning.jl")
+include("../train_problems/network_flow_planning.jl")
 
 function evaluate_ldr(ldr, sample)
     X = value.(ldr.primal_model[:X])
@@ -33,7 +37,7 @@ function dr_pwldr_calc(pwldr, sample_list)
     X = value.(pwldr.model[:X])
     C = pwldr.model.ext[:C]
     for sample in sample_list
-        sum += evaluate_sample(pwldr.PWVR_list, X, C, sample)
+        sum += PiecewiseLDR.evaluate_sample(pwldr.PWVR_list, X, C, sample)
     end
     return sum/length(sample_list)
 end
@@ -49,8 +53,8 @@ function shipment_planning_test(
     n_clients = 5
     n_segments = [2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-    displace_function = [("black_box", black_box!),
-                        ("local_search", local_search!)]
+    displace_function = [("black_box", PiecewiseLDR.black_box!),
+                        ("local_search", PiecewiseLDR.local_search!)]
 
     checkpoint_file = "data/shipment_planning.csv"
     
@@ -130,8 +134,8 @@ function shipment_planning_test(
 
                 # Uniform segments
                 ## Demand Uncertainty
-                pwldr = PWLDR(ldr)
-                pwldr.n_segments_vec = _segments_number(ldr; fix_n = seg)
+                pwldr = PiecewiseLDR.PWLDR(ldr)
+                pwldr.n_segments_vec = PiecewiseLDR._segments_number(ldr; fix_n = seg)
 
                 pwldr_model = SPModelPWLDR(problem, pwldr)
                 reoptm_pwldr_uniform = sp_second_stage(pwldr_model, samples_demand_test)
@@ -192,8 +196,8 @@ function network_flow_planning_test(
     n_commodities = 3
     n_segments = [2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-    displace_function = [("black_box", black_box!),
-                        ("local_search.jl", local_search!)]
+    displace_function = [("black_box", PiecewiseLDR.black_box!),
+                        ("local_search.jl", PiecewiseLDR.local_search!)]
 
     checkpoint_file = "data/network_flow_planning.csv"
 
@@ -256,8 +260,8 @@ function network_flow_planning_test(
             for seg in n_segments
 
                 # Uniform segments
-                pwldr = PWLDR(ldr)
-                pwldr.n_segments_vec = _segments_number(ldr; fix_n = seg)
+                pwldr = PiecewiseLDR.PWLDR(ldr)
+                pwldr.n_segments_vec = PiecewiseLDR._segments_number(ldr; fix_n = seg)
 
                 pwldr_model = NFPModelPWLDR(problem, pwldr)
                 reoptm_pwldr_uniform = nfp_second_stage(pwldr_model, samples_demand_test, samples_cost_test)

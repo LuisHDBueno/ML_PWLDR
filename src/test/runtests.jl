@@ -1,11 +1,14 @@
 module TestMain
 
-include("../pwldr.jl")
-include("../segments/displace_segments_models/black_box.jl")
-include("../segments/displace_segments_models/local_search.jl")
+using Distributions
+using JuMP
+using LinearDecisionRules
+using HiGHS
+
+include("../PiecewiseLDR.jl")
+using .PiecewiseLDR
 
 using Test
-using HiGHS
 
 function runtests()
     for name in names(@__MODULE__; all = true)
@@ -48,7 +51,7 @@ function test_build_ldr()
     )
     optimize!(ldr)
 
-    pwldr = PWLDR(ldr)
+    pwldr = PiecewiseLDR.PWLDR(ldr)
 
     optimize!(pwldr)
 
@@ -104,7 +107,7 @@ function test_build_vector_distribution()
     )
     optimize!(ldr)
 
-    pwldr = PWLDR(ldr)
+    pwldr = PiecewiseLDR.PWLDR(ldr)
 
     optimize!(pwldr)
 
@@ -147,8 +150,8 @@ function test_build_pwldr()
     optimize!(ldr)
 
     n_breakpoints = 2
-    pwldr = PWLDR(ldr)
-    set_breakpoint!(pwldr, demand, n_breakpoints)
+    pwldr = PiecewiseLDR.PWLDR(ldr)
+    PiecewiseLDR.set_breakpoint!(pwldr, demand, n_breakpoints)
     optimize!(pwldr)
 
     @test objective_value(ldr) <= objective_value(pwldr)
@@ -170,7 +173,7 @@ function test_build_pwldr()
     @test isapprox(C_ldr, C_pwldr; atol=1e-6)
 
     M_ldr = ldr.ext[:_LDR_M]
-    M_pwldr = _build_second_moment_matrix(pwldr.n_segments_vec, pwldr.PWVR_list)
+    M_pwldr = PiecewiseLDR._build_second_moment_matrix(pwldr.n_segments_vec, pwldr.PWVR_list)
     @test isapprox(M_ldr, M_pwldr; atol=1e-6)
 
 end
@@ -207,15 +210,15 @@ function test_update_breakpoints()
     optimize!(ldr)
 
     n_breakpoints = 2
-    pwldr = PWLDR(ldr)
-    set_breakpoint!(pwldr, demand, n_breakpoints)
+    pwldr = PiecewiseLDR.PWLDR(ldr)
+    PiecewiseLDR.set_breakpoint!(pwldr, demand, n_breakpoints)
     optimize!(pwldr)
 
     @test objective_value(ldr) <= objective_value(pwldr)
 
     # update breakpoints
     η_vec = [80.0, 90.0, 110.0, 120.0]
-    update_breakpoints!(pwldr, [[1.0,2.0,1.0]])
+    PiecewiseLDR.update_breakpoints!(pwldr, [[1.0,2.0,1.0]])
 
     LinearDecisionRules.set_attribute(
         demand,
@@ -236,7 +239,7 @@ function test_update_breakpoints()
     @test isapprox(C_ldr, C_pwldr; atol=1e-6)
 
     M_ldr = ldr.ext[:_LDR_M]
-    M_pwldr = _build_second_moment_matrix(pwldr.n_segments_vec, pwldr.PWVR_list)
+    M_pwldr = PiecewiseLDR._build_second_moment_matrix(pwldr.n_segments_vec, pwldr.PWVR_list)
     @test isapprox(M_ldr, M_pwldr; atol=1e-6)
 
 end
@@ -272,12 +275,12 @@ function test_black_box()
     optimize!(ldr)
 
     n_breakpoints = 2
-    pwldr = PWLDR(ldr)
-    set_breakpoint!(pwldr, demand, n_breakpoints)
+    pwldr = PiecewiseLDR.PWLDR(ldr)
+    PiecewiseLDR.set_breakpoint!(pwldr, demand, n_breakpoints)
     optimize!(pwldr)
     before_opt_displace = objective_value(pwldr)
 
-    black_box!(pwldr)
+    PiecewiseLDR.black_box!(pwldr)
     optimize!(pwldr)
     after_opt_displace = objective_value(pwldr)
 
@@ -316,12 +319,12 @@ function test_local_search()
     optimize!(ldr)
 
     n_breakpoints = 2
-    pwldr = PWLDR(ldr)
-    set_breakpoint!(pwldr, demand, n_breakpoints)
+    pwldr = PiecewiseLDR.PWLDR(ldr)
+    PiecewiseLDR.set_breakpoint!(pwldr, demand, n_breakpoints)
     optimize!(pwldr)
     before_opt_displace = objective_value(pwldr)
 
-    local_search!(pwldr)
+    PiecewiseLDR.local_search!(pwldr)
     optimize!(pwldr)
     after_opt_displace = objective_value(pwldr)
 

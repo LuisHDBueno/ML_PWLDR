@@ -1,20 +1,22 @@
-using Distributions
-using Expectations
-using JuMP
-using Statistics
-using Random
-using LinearDecisionRules
-using LinearAlgebra
-using SparseArrays
-using BlackBoxOptim
+"""
+    PWLDR
 
-import JuMP: optimize!, objective_value, getindex
+    Mutable struct that represents the piecewise linear problem
 
-include("pwrv.jl")
-include("canonical_transform.jl")
-include("second_moment.jl")
-include("segments/segments_number.jl")
-
+    # Fields
+    - model::JuMP.Model: JuMP model at the piecewise form
+    - ldr_model::LinearDecisionRules.LDRModel: Original LDR model
+    - PWVR_list::Vector{PWVR}: List of existing piecewise variables
+    - n_segments_vec::Vector{Int}: Vector of number of segments for each
+        variable
+    - W_constraints::Dict{Symbol, Matrix{JuMP.ConstraintRef}}: W matrix
+        dependent constraints
+    - h_constraints::Dict{Symbol, Vector{JuMP.ConstraintRef}}: h vector
+        dependent constraints
+    - reset_model::Bool: Flag to reset the JuMP model before optimize
+    - uncertainty_to_distribution::Dict{JuMP.VariableRef, Tuple{Int64, Int64}}:
+        Order of uncertainty distributions
+"""
 mutable struct PWLDR
     model::JuMP.Model
     ldr_model::LinearDecisionRules.LDRModel
@@ -23,9 +25,23 @@ mutable struct PWLDR
     W_constraints::Dict{Symbol, Matrix{JuMP.ConstraintRef}}
     h_constraints::Dict{Symbol, Vector{JuMP.ConstraintRef}}
     reset_model::Bool
-    uncertainty_to_distribution
+    uncertainty_to_distribution::Dict{JuMP.VariableRef, Tuple{Int64, Int64}}
 end
 
+"""
+    flatten_distributions_in_order(
+        ldr_model::LinearDecisionRules.LDRModel
+    )
+    
+    Flatten and order all the distributions of the original LDR problem into a
+        single vector of distributions
+
+    # Arguments
+    - ldr_model::LinearDecisionRules.LDRModel: Original LDR model
+
+    # Returns
+    ::Vector{Distribution}: All distributions in order
+"""
 function flatten_distributions_in_order(
     ldr_model::LinearDecisionRules.LDRModel
 )
@@ -57,10 +73,7 @@ function flatten_distributions_in_order(
         end
     end
 
-    # Agora ordena pelo dist_idx
     sorted_temp = sort(temp, by = x -> x[1])
-
-    # Extrai apenas as distribuições e adiciona na ordem correta
     for (_, dist) in sorted_temp
         push!(all_distributions, dist)
     end
@@ -68,12 +81,33 @@ function flatten_distributions_in_order(
     return all_distributions
 end
 
+"""
+    _build_init_pwvr_list(
+        n_segments_vec::Vector{Int},
+        η_min::Vector{Float64},
+        η_max::Vector{Float64},
+        distribution_vec::Vector{Distribution}
+    )
+    
+    Build the list of piecewise random variables with evenly divided segments
+
+    # Arguments
+    - n_segments_vec::Vector{Int}: Number os segments at each piecewise random
+        variable
+    - η_min::Vector{Float64}: Lower bound of each piecewise random variable
+    - η_max::Vector{Float64}: Upper bound of each piecewise random variable
+    - distribution_vec::Vector{Distribution}: Distribution of each piecewise
+        random variable
+
+    # Returns
+    ::Vector{PWVR}: Vector of piecewise random variables
+"""
 function _build_init_pwvr_list(
     n_segments_vec::Vector{Int},
     η_min::Vector{Float64},
     η_max::Vector{Float64},
     distribution_vec::Vector{Distribution}
-    )
+)
     pwvr_list = Vector{PWVR}()
     for i in 1:length(η_min)
         n = n_segments_vec[i]
@@ -87,7 +121,23 @@ function _build_init_pwvr_list(
     return pwvr_list
 end
 
-function _build_problem(
+"""
+    _build_problem(
+        pwldr::PWLDR
+    )
+
+    Build the JuMP model that represents the piecewise linear problem and fill
+        the information at the PWLDR struct
+
+    # Arguments
+    - pwldr::PWLDR: Struct with the minimum information to build the JuMP model.
+            minimum information:
+                - ldr_model
+                - n_segments_vec
+                - uncertainty_to_distribution
+    
+"""
+function _build_problem!(
     pwldr::PWLDR
 )
     ldr_model = pwldr.ldr_model
@@ -200,20 +250,65 @@ function _build_problem(
     pwldr.reset_model = false
 end
 
-function optimize!(model::PWLDR)
+"""
+    optimize!(
+        model::PWLDR
+    )
+
+    Optimize the PWLDR problem and build the problem if the flag reset_model
+        is true
+
+    # Arguments
+    - model::PWLDR: PWLDR problem to be optimized
+"""
+function optimize!(
+    model::PWLDR
+)
     if model.reset_model
-        _build_problem(model)
+        _build_problem!(model)
         JuMP.optimize!(model.model)
     else
         JuMP.optimize!(model.model)
     end
 end
 
-function objective_value(model::PWLDR)
+"""
+    objective_value(
+        model::PWLDR
+    )
+
+    Get the objective value of the problem
+
+    # Arguments
+    - model::PWLDR: PWLDR problem to get the objective value
+
+    # Returns
+    ::Float64: Objective value of the problem
+"""
+function objective_value(
+    model::PWLDR
+)
     return objective_value(model.model)
 end
 
-function update_breakpoints!(pwldr::PWLDR, weight_vec::Vector{Vector{Float64}})
+"""
+    update_breakpoints!(
+        pwldr::PWLDR,
+        weight_vec::Vector{Vector{Float64}}
+    )
+
+    Update all properties of the PWLDR problem given a new vector of weights for
+        the segments
+
+    # Arguments
+    - pwldr::PWLDR: PWLDR model to be updated
+    - weight_vec::Vector{Vector{Float64}}: Vector of weights for each piecewise
+        random variable
+"""
+function update_breakpoints!(
+    pwldr::PWLDR,
+    weight_vec::Vector{Vector{Float64}}
+)
     function delete_matrix_constraint(model, matrix_constraint)
         for constr in matrix_constraint
             delete(model, constr)
@@ -275,8 +370,12 @@ function update_breakpoints!(pwldr::PWLDR, weight_vec::Vector{Vector{Float64}})
     end
 end
 
-function evaluate_sample(PWVR_list, X, C, samples)
-    #Change evaluate to correct sample order
+function evaluate_sample(
+    PWVR_list,
+    X,
+    C,
+    samples
+)
     ξ = [1.0]
     for (pwvr, sp) in zip(PWVR_list, samples)
         ξ_ext = sample_vector(pwvr, sp)
@@ -286,11 +385,81 @@ function evaluate_sample(PWVR_list, X, C, samples)
     return value_ret
 end
 
-function getindex(model::PWLDR, indice::Symbol)
+function getindex(
+    model::PWLDR,
+    indice::Symbol
+)
     return getindex(model.model, indice)
 end
 
-function PWLDR(ldr_model::LinearDecisionRules.LDRModel)
+"""
+    _segments_number(
+        ldr_model::LinearDecisionRules.LDRModel;
+        fix_n::Int = 1
+    )
+
+    Build a vector with fixed segments number for each random variable of the
+        ldr model
+
+    # Arguments
+    ldr_model::LinearDecisionRules.LDRModel: Original LDR problem
+    fix_n::Int = 1: Number to be fixed
+
+    # Returns
+    ::Vector{Int}: Respective segments_number vector
+"""
+function _segments_number(
+    ldr_model::LinearDecisionRules.LDRModel;
+    fix_n::Int = 1
+)
+    ABC = ldr_model.ext[:_LDR_ABC]
+    dim_ξ_ldr = size(ABC.Be, 2)
+
+    n_segments_vec = ones(Int, dim_ξ_ldr - 1) * fix_n
+    return n_segments_vec
+end
+
+"""
+    set_breakpoint!(
+        pwldr::PWLDR,
+        variable::JuMP.VariableRef,
+        n_breakpoints::Int
+    )
+
+    Set the number of breakpoints for the respective variable
+
+    # Arguments
+    - pwldr::PWLDR: PWLDR model
+    - variable::JuMP.VariableRef: Name of the variable to be changed
+    - n_breakpoints::Int: Number of breakpoints to be setted
+"""
+function set_breakpoint!(
+    pwldr::PWLDR,
+    variable::JuMP.VariableRef,
+    n_breakpoints::Int
+)
+    dist_idx, inner_idx = pwldr.uncertainty_to_distribution[variable]
+    pwldr.n_segments_vec[dist_idx] = n_breakpoints + 1
+    pwldr.reset_model = true
+end
+
+"""
+    PWLDR(
+        ldr_model::LinearDecisionRules.LDRModel
+    )
+
+    Given a linear decision rule model, build the minimum structure to transform
+        into a piecewise linear model
+    
+    # Arguments
+    - ldr_model::LinearDecisionRules.LDRModel: Original ldr model
+
+    # Returns
+    ::PWLDR: minimum structure of piecewise model
+"""
+function PWLDR(
+    ldr_model::LinearDecisionRules.LDRModel
+)
     
     n_segments_vec = _segments_number(ldr_model)
 
@@ -306,3 +475,4 @@ function PWLDR(ldr_model::LinearDecisionRules.LDRModel)
 
     return empty_model
 end
+

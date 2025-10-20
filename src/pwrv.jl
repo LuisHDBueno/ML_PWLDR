@@ -1,7 +1,24 @@
 import Distributions: cdf
 
+"""
+    PWVR
+
+    Mutable struct that represents a piecewise linear variable with lower and
+        upper bounds
+
+    # Fields
+    - distribution::Distributions.Distribution: Probability distribution
+    - n_breakpoints::Int64: Number of breakpoints to split the variable
+    - min::Float64: Lower bound of the variable's support
+    - max::Float64: Upper bound of the variable's support
+    - range::Float64: Total range of the variable (`max - min`)
+    - weight::Vector{Float64}: Weight associated with each segment of the
+        picewise variable
+    - η_vec::Vector{Float64}: Vector containing the nodes values used in the
+         piecewise representation. Includes the min and max values.
+"""
 mutable struct PWVR
-    distribution
+    distribution::Distributions.Distribution
     n_breakpoints::Int64
     min::Float64
     max::Float64
@@ -10,6 +27,31 @@ mutable struct PWVR
     η_vec::Vector{Float64}
 end
 
+"""
+    PWVR(
+        distribution,
+        min,
+        max,
+        weight
+    )
+
+    Contructor for the PWVR structure
+
+    # Arguments
+    - distribution::Distributions.Distribution: Probability distribution
+    - n_breakpoints::Int64: Number of breakpoints to split the variable
+    - min::Float64: Lower bound of the variable's support
+    - max::Float64: Upper bound of the variable's support
+    - range::Float64: Total range of the variable (`max - min`)
+    - weight::Vector{Float64}: Weight associated with each segment of the
+        picewise variable
+    - η_vec::Vector{Float64}: Vector containing the nodes values used in the
+         piecewise representation. Includes the min and max values.
+
+    # Returns
+    ::PWVR: Mutable struct that represents a piecewise linear variable with
+        lower and upper bounds
+"""
 function PWVR(
     distribution,
     min,
@@ -27,7 +69,33 @@ function PWVR(
     return PWVR(distribution, n_breakpoints, min, max, range, weight, η_vec)
 end
 
-function sample_vector(variable::PWVR, value::Float64)
+"""
+    sample_vector(
+        variable::PWVR,
+        value::Float64
+    )
+
+    Build the lifted vector of the piecewise variable at given sample
+
+    # Arguments
+    - variable::PWVR: Piecewise variable to be lifted
+    - value::Float64: Value of the sample
+
+    # Errors
+    - ArgumentError: Thrown if `value` is outside the valid range `[variable.min, variable.max]`.
+
+    # Returns
+    ::Vector{Float64}: Lifted vector
+"""
+function sample_vector(
+    variable::PWVR,
+    value::Float64
+)
+    if !(variable.min <= value <= variable.max)
+        throw(ArgumentError("Value $value is out of bounds:
+                            [$(variable.min), $(variable.max)]"))
+    end
+
     ξ_tilde = zeros(variable.n_breakpoints + 1)
     ξ_tilde[1] = variable.min
     value -= variable.min
@@ -41,8 +109,23 @@ function sample_vector(variable::PWVR, value::Float64)
     return ξ_tilde
 end
 
-function update_breakpoints!(variable::PWVR, new_weight::Vector{Float64})
-    #Normalizar os pesos para somar 1 e limitar superiormente η
+"""
+    update_breakpoints!(
+        variable::PWVR,
+        new_weight::Vector{Float64}
+    )
+
+    Normalize the vector of weights for each segment and update the breakpoints
+        of the piecewise variable
+
+    # Arguments
+    - variable::PWVR: Piecewise variable to be updated
+    - new_weight::Vector{Float64}: Vector of weights for each segment
+"""
+function update_breakpoints!(
+    variable::PWVR,
+    new_weight::Vector{Float64}
+)
     w_norm = new_weight ./ sum(new_weight)
     variable.weight = w_norm
     for i in 1:variable.n_breakpoints
@@ -50,11 +133,44 @@ function update_breakpoints!(variable::PWVR, new_weight::Vector{Float64})
     end
 end
 
-function mean(variable::PWVR)
+"""
+    mean(
+        variable::PWVR
+    )
+
+    Build a vector with the mean of each segment for the piecewise variable
+
+    # Arguments
+    - variable::PWVR: Piecewise variable to get lifted mean
+
+    # Return
+    ::Vector{Float64}: Lifted mean vector
+"""
+function mean(
+    variable::PWVR
+)
     return [mean(variable, i) for i in 1:(variable.n_breakpoints+1)]
 end
 
-function mean(variable::PWVR, segment_index)
+"""
+    mean(
+        variable::PWVR,
+        segment_index::Int
+    )
+    
+    Get the mean of the random variable at the respective segment
+
+    # Arguments
+    - variable::PWVR: Piecewise variable to get mean
+    - segment_index::Int: Number of the segment to get the mean
+
+    # Return
+    - ::Float64: Mean of the segment
+"""
+function mean(
+    variable::PWVR,
+    segment_index::Int
+)
     min = variable.η_vec[segment_index]
     max = variable.η_vec[segment_index + 1]
 
@@ -70,11 +186,44 @@ function mean(variable::PWVR, segment_index)
     return val
 end
 
-function var(variable::PWVR)
+"""
+    var(
+        variable::PWVR
+    )
+
+    Build a vector with the variance of each segment for the piecewise variable
+
+    # Arguments
+    - variable::PWVR: Piecewise variable to get the lifted variance
+
+    # Return
+    ::Vector{Float64}: Lifted variance vector
+"""
+function var(
+    variable::PWVR
+)
     return [var(variable, i) for i in 1:(variable.n_breakpoints+1)]
 end
 
-function var(variable::PWVR, segment_index)
+"""
+    var(
+        variable::PWVR,
+        segment_index::Int
+    )
+    
+    Get the var of the random variable at the respective segment
+
+    # Arguments
+    - variable::PWVR: Piecewise variable to get the variance
+    - segment_index::Int: Number of the segment to get the variance
+
+    # Returns
+    ::Float64: Variance of the segment
+"""
+function var(
+    variable::PWVR,
+    segment_index::Int
+)
     Δi = Δ(variable, segment_index)
 
     min = variable.η_vec[segment_index]
@@ -95,7 +244,23 @@ function var(variable::PWVR, segment_index)
     return part1 + part2 - μ^2
 end
 
-function cov(variable::PWVR)
+"""
+    cov(
+        variable::PWVR
+    )
+
+    Get the covariance matrix between the random variables that represents the
+        piecewise variable
+
+    # Arguments
+    - variable::PWVR: Piecewise variable to get the covariance
+
+    # Returns
+    ::Matrix{Float64}: Covariance Matrix
+"""
+function cov(
+    variable::PWVR
+)
     n = variable.n_breakpoints + 1
     μ = mean(variable)
     μ[1] -= variable.min
@@ -135,7 +300,26 @@ function cov(variable::PWVR)
     return ret
 end
 
-function cov(pwvr_i::PWVR, pwvr_j::PWVR)
+"""
+    cov(
+        pwvr_i::PWVR,
+        pwvr_j::PWVR
+    )
+
+    Get the covariance matrix between each segment of two independent piecewise
+        random variables
+
+    # Arguments
+        - pwvr_i::PWVR: First piecewise random variable
+        - pwvr_j::PWVR: Second piecewise random variable
+
+    # Returns
+    ::Matrix{Float64}: Covariance Matrix
+"""
+function cov(
+    pwvr_i::PWVR,
+    pwvr_j::PWVR
+)
     Σ = zeros(pwvr_i.n_breakpoints + 1, pwvr_j.n_breakpoints + 1)
     for i in 1:(pwvr_i.n_breakpoints + 1)
         for j in 1:(pwvr_j.n_breakpoints + 1)
@@ -145,13 +329,59 @@ function cov(pwvr_i::PWVR, pwvr_j::PWVR)
     return Σ
 end
 
-function cov(pwvr_i::PWVR, idx_i::Int, pwvr_j::PWVR, idx_j::Int)
+"""
+    cov(
+        pwvr_i::PWVR,
+        idx_i::Int,
+        pwvr_j::PWVR,
+        idx_j::Int
+    )
+
+    Get the covariance between segments of two independent piecewise random
+        variables
+
+    # Arguments
+        - pwvr_i::PWVR: First piecewise random variable
+        - idx_i::Int: Index of the segment at the first random variable
+        - pwvr_j::PWVR: Second piecewise random variable
+        - idx_j::Int: Index of the segment at the second random variable
+
+    # Returns
+    ::Float64: Covariance between segments
+"""
+function cov(
+    pwvr_i::PWVR,
+    idx_i::Int,
+    pwvr_j::PWVR,
+    idx_j::Int
+)
     dist_i = truncated(pwvr_i.distribution, pwvr_i.η_vec[idx_i], pwvr_i.η_vec[idx_i + 1])
     dist_j = truncated(pwvr_j.distribution, pwvr_j.η_vec[idx_j], pwvr_j.η_vec[idx_j + 1])
     return cov(dist_i, dist_j)
 end 
 
-function cov(dist1::Distribution, dist2::Distribution; n_samples=1_000)
+"""
+    cov(
+        dist1::Distribution,
+        dist2::Distribution;
+        n_samples = 1_000
+    )
+
+    Get the covariance between two distributions using n_samples
+
+    # Arguments
+    - dist1::Distribution: First distribution
+    - dist2::Distribution: Second distribution
+    - n_samples = 1_000: Number of samples to calculate the samples
+
+    # Returns
+    ::Float64: Covariance between distributions
+"""
+function cov(
+    dist1::Distribution,
+    dist2::Distribution;
+    n_samples = 1_000
+)
     rng = MersenneTwister(1234)
     x = rand(rng, dist1, n_samples)
     y = rand(rng, dist2, n_samples)
@@ -162,10 +392,46 @@ function cov(dist1::Distribution, dist2::Distribution; n_samples=1_000)
     return Σ
 end
 
-function prob_between(variable::PWVR, min, max)
+"""
+    prob_between(
+        variable::PWVR,
+        min::Float64,
+        max::Float64
+    )
+    
+    Get the probability between two values at a piecewise random variable
+
+    # Arguments
+    - variable::PWVR: Piecewise variable to be considered
+    - min::Float64: Lower value of the range
+    - max::Float64: Upper value of the range
+"""
+function prob_between(
+    variable::PWVR,
+    min::Float64,
+    max::Float64
+)
     return cdf(variable.distribution, max) - cdf(variable.distribution, min)
 end
 
-function Δ(variable::PWVR, segment_index)
+"""
+    Δ(
+        variable::PWVR,
+        segment_index::Int
+    )
+    
+    Get the size of the support at the segment on the piecewise variable
+
+    # Arguments
+    - variable::PWVR: Piecewise variable to get support
+    - segment_index::Int: Index of the segment to be considered
+
+    # Returns
+    ::Float64: Size of the support at the segment
+"""
+function Δ(
+    variable::PWVR,
+    segment_index::Int
+)
     return variable.η_vec[segment_index + 1] - variable.η_vec[segment_index]
 end

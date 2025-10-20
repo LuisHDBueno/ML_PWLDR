@@ -1,8 +1,26 @@
+"""
+    _build_B(
+        B::SparseArrays.SparseMatrixCSC{Float64, Int64},
+        n_segments::Vector{Int}
+    )
 
+    Transform the B matrix from the original LDR problem to the respective
+    piecewise format
+    
+    # Arguments
+    - B::SparseArrays.SparseMatrixCSC{Float64, Int64}: B matrix from the 
+        original LDR
+    - n_segments::Vector{Int}: Vector that contains the number of segments at each
+        piecewise variable
+
+    # Returns
+    ::SparseArrays.SparseMatrixCSC{Float64, Int64}: Piecewise representation of
+        B matrix
+"""
 function _build_B(
     B::SparseArrays.SparseMatrixCSC{Float64, Int64},
-    n_segments::Vector{I}
-    ) where I
+    n_segments::Vector{Int}
+)
 
     col_indices = vcat([fill(i+1, n_segments[i]) for i in 1:length(n_segments)]...)
     B_new = hcat(B[:, 1], B[:, col_indices])
@@ -10,13 +28,46 @@ function _build_B(
     return B_new
 end
 
+"""
+    _build_C(
+        C::SparseArrays.SparseMatrixCSC{Float64, Int64},
+        n_segments::Vector{Int}
+    )
+
+    Transform the C matrix from the original LDR problem to the respective
+    piecewise format
+    
+    # Arguments
+    - C::SparseArrays.SparseMatrixCSC{Float64, Int64}: C matrix from the
+        original LDR
+    - n_segments::Vector{Int}: Vector that contains the number of segments at each
+        piecewise variable
+
+    # Returns
+    ::SparseArrays.SparseMatrixCSC{Float64, Int64}: Piecewise representation of
+        C matrix
+"""
 function _build_C(
     C::SparseArrays.SparseMatrixCSC{Float64, Int64},
-    n_segments::Vector{I}
-    ) where I
+    n_segments::Vector{Int}
+    )
     return _build_B(C, n_segments)
 end
 
+"""
+    _build_h(
+        PWVR_list::Vector{PWVR}
+    )
+
+    Build right side vector for the restriction W η ≥ h
+    
+    # Arguments
+    - PWLR_list::Vector{PWVR}: Vector of all piecewise variables at the correct
+        order
+
+    # Returns
+    ::Vector{Float64}: right side vector for the restriction W η ≥ h
+"""
 function _build_h(
     PWVR_list::Vector{PWVR}
 )
@@ -45,10 +96,28 @@ function _build_h(
     return h
 end
 
+"""
+    _build_W(
+        n_segments::Vector{Int},
+        PWVR_list::Vector{PWVR}
+    )
+
+    Build the W matrix for the restriction W η ≥ h at compact format
+    
+    # Arguments
+    - n_segments::Vector{Int}: Vector that contains the number of segments
+        at each piecewise variable
+    - PWLR_list::Vector{PWVR}: Vector of all piecewise variables at the correct
+        order
+
+    # Returns
+    ::SparseArrays.SparseMatrixCSC{Float64, Int64}: W matrix for the restriction
+        W η ≥ h at compact format
+"""
 function _build_W(
-    n_segments::Vector{F},
+    n_segments::Vector{Int},
     PWVR_list::Vector{PWVR}
-) where F
+)
     dim_uncertainty = Int(sum(n_segments))
     
     rows = Int[]

@@ -22,7 +22,7 @@ end
 
 function NFPModelPWLDR(
     problem::NetworkFlowPlanning,
-    pwldr::PWLDR
+    pwldr::PiecewiseLDR.PWLDR
 )
     optimize!(pwldr)
     obj_value = objective_value(pwldr)
