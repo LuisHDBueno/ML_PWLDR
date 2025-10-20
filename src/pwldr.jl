@@ -104,7 +104,7 @@ function _build_problem(
     pwvr_list = _build_init_pwvr_list(n_segments_vec, η_min, η_max, distribution_vec)
 
     # Model Init
-    model = pwldr.model
+    model = JuMP.Model(ldr_model.solver)
     set_silent(model)
     model.ext[:first_stage_index] = first_stage_index
 
@@ -195,6 +195,7 @@ function _build_problem(
     model.ext[:sense] = ldr_model.ext[:_LDR_sense]
 
     # Fill pwldr struct
+    pwldr.model = model
     pwldr.PWVR_list = pwvr_list
     pwldr.W_constraints = W_constraints
     pwldr.h_constraints = h_constraints
@@ -296,7 +297,7 @@ function PWLDR(ldr_model::LinearDecisionRules.LDRModel)
     n_segments_vec = _segments_number(ldr_model)
 
     #Build empty model
-    empty_model = PWLDR(JuMP.Model(ldr_model.solver),
+    empty_model = PWLDR(JuMP.Model(),
                         ldr_model,
                         PWVR[],
                         n_segments_vec,

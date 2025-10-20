@@ -15,4 +15,5 @@ end
 function set_breakpoint!(pwldr, variable, n_breakpoints)
     dist_idx, inner_idx = pwldr.uncertainty_to_distribution[variable]
     pwldr.n_segments_vec[dist_idx] = n_breakpoints + 1
+    pwldr.reset_model = true
 end

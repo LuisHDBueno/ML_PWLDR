@@ -18,7 +18,8 @@ function _build_second_moment_matrix(
         M[1, line:line+n-1] .= μ
         M[line:line+n-1, 1] .= μ
 
-        Σ = cov(pwvr) .+ μ * μ'
+        cov_d = cov(pwvr)
+        Σ = cov_d .+ μ * μ'
         M[line:line+n-1, line:line+n-1] .= Σ
 
         push!(line_indices, line)

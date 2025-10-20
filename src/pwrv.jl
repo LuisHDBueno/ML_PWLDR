@@ -18,10 +18,11 @@ function PWVR(
 )
     range = max - min
     n_breakpoints = length(weight) - 1
-    η_vec = [0.0, min]
-    for i in 1:length(weight)
+    η_vec = [min]
+    for i in 1:(n_breakpoints + 1)
         push!(η_vec, last(η_vec) + range * weight[i])
     end
+    η_vec[end] = max
 
     return PWVR(distribution, n_breakpoints, min, max, range, weight, η_vec)
 end
@@ -45,7 +46,7 @@ function update_breakpoints!(variable::PWVR, new_weight::Vector{Float64})
     w_norm = new_weight ./ sum(new_weight)
     variable.weight = w_norm
     for i in 1:variable.n_breakpoints
-        variable.η_vec[i + 2] = variable.η_vec[i+1] + variable.range * variable.weight[i]
+        variable.η_vec[i + 1] = variable.η_vec[i] + variable.range * variable.weight[i]
     end
 end
 
@@ -54,8 +55,8 @@ function mean(variable::PWVR)
 end
 
 function mean(variable::PWVR, segment_index)
-    min = variable.η_vec[segment_index + 1]
-    max = variable.η_vec[segment_index + 2]
+    min = variable.η_vec[segment_index]
+    max = variable.η_vec[segment_index + 1]
 
     trunc_dist = truncated(variable.distribution, min, max)
     prob = prob_between(variable, min, max)
@@ -64,7 +65,7 @@ function mean(variable::PWVR, segment_index)
     Δi = Δ(variable, segment_index)
     val = exp * prob + Δi * (1 - Distributions.cdf(variable.distribution, max))
     if (segment_index == 1)
-        val += variable.η_vec[2]
+        val += variable.min
     end
     return val
 end
@@ -76,19 +77,20 @@ end
 function var(variable::PWVR, segment_index)
     Δi = Δ(variable, segment_index)
 
-    min = variable.η_vec[segment_index + 1]
-    max = variable.η_vec[segment_index + 2]
+    min = variable.η_vec[segment_index]
+    max = variable.η_vec[segment_index + 1]
     trunc_dist = truncated(variable.distribution, min, max)
 
     E = Expectations.expectation(trunc_dist)
 
-    part1 = E(x -> (x - min)^2)
+    prob1 = prob_between(variable, min, max)
+    part1 = E(x -> (x - min)^2) * prob1
 
     part2 = Δi^2 * (1 - Distributions.cdf(variable.distribution, max))
 
     μ = mean(variable, segment_index)
     if (segment_index == 1)
-        μ -= variable.η_vec[2]
+        μ -= variable.min
     end
     return part1 + part2 - μ^2
 end
@@ -96,6 +98,7 @@ end
 function cov(variable::PWVR)
     n = variable.n_breakpoints + 1
     μ = mean(variable)
+    μ[1] -= variable.min
     ret = zeros(Float64, n, n)
 
     for j in 1:n
@@ -103,23 +106,23 @@ function cov(variable::PWVR)
             Δi = Δ(variable, i)
             Δj = Δ(variable, j)
 
-            min_j = variable.η_vec[j + 1]
-            max_j = variable.η_vec[j + 2]
+            min_j = variable.η_vec[j]
+            max_j = variable.η_vec[j + 1]
             trunc_dist_j = truncated(variable.distribution, min_j, max_j)
             prob_j = prob_between(variable, min_j, max_j)
 
             E = Expectations.expectation(trunc_dist_j)
             part1 = Δi * (E(x -> x - min_j) * prob_j)
             if j == 1
-                part1 += variable.η_vec[2] * prob_j
+                part1 += variable.min * prob_j
             end
 
             part2 = Δi * Δj * (1 - Distributions.cdf(variable.distribution, max_j))
-
             val = part1 + part2 - μ[i] * μ[j]
 
             ret[i, j] = val
             ret[j, i] = val
+
         end
     end
 
@@ -143,8 +146,8 @@ function cov(pwvr_i::PWVR, pwvr_j::PWVR)
 end
 
 function cov(pwvr_i::PWVR, idx_i::Int, pwvr_j::PWVR, idx_j::Int)
-    dist_i = truncated(pwvr_i.distribution, pwvr_i.η_vec[idx_i + 1], pwvr_i.η_vec[idx_i + 2])
-    dist_j = truncated(pwvr_j.distribution, pwvr_j.η_vec[idx_j + 1], pwvr_j.η_vec[idx_j + 2])
+    dist_i = truncated(pwvr_i.distribution, pwvr_i.η_vec[idx_i], pwvr_i.η_vec[idx_i + 1])
+    dist_j = truncated(pwvr_j.distribution, pwvr_j.η_vec[idx_j], pwvr_j.η_vec[idx_j + 1])
     return cov(dist_i, dist_j)
 end 
 
@@ -164,5 +167,5 @@ function prob_between(variable::PWVR, min, max)
 end
 
 function Δ(variable::PWVR, segment_index)
-    return variable.η_vec[segment_index + 2] - variable.η_vec[segment_index + 1]
+    return variable.η_vec[segment_index + 1] - variable.η_vec[segment_index]
 end

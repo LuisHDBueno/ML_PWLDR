@@ -26,11 +26,11 @@ function _build_h(
 
     for pwvr in PWVR_list
         
-        push!(lb, pwvr.η_vec[2])
+        push!(lb, pwvr.η_vec[1])
         append!(lb, zeros(Float64, pwvr.n_breakpoints))
 
-        push!(ub, pwvr.η_vec[3] - pwvr.η_vec[1])
-        for i in 3:(pwvr.n_breakpoints + 2)
+        push!(ub, pwvr.η_vec[2])
+        for i in 2:(pwvr.n_breakpoints + 1)
             push!(ub, pwvr.η_vec[i + 1] - pwvr.η_vec[i])
         end
 
@@ -38,7 +38,7 @@ function _build_h(
             continue
         end
         push!(hu, - last(pwvr.η_vec))
-        push!(hu, pwvr.η_vec[2] * (pwvr.η_vec[4] - pwvr.η_vec[3]))
+        push!(hu, pwvr.η_vec[1] * (pwvr.η_vec[3] - pwvr.η_vec[2]))
         append!(hu, zeros(Float64, max(pwvr.n_breakpoints - 1, 0)))
     end
     h = vcat([1.0], [-1.0], hu, -ub, lb)
@@ -76,11 +76,11 @@ function _build_W(
         for i in 2:(pwvr.n_breakpoints + 1)
             push!(rows, line)
             push!(cols, col)
-            push!(vals, -(pwvr.η_vec[i+2] - pwvr.η_vec[i+1]))
+            push!(vals, -(pwvr.η_vec[i+1] - pwvr.η_vec[i]))
 
             push!(rows, line)
             push!(cols, col+1)
-            push!(vals, pwvr.η_vec[i+1] - pwvr.η_vec[i])
+            push!(vals, pwvr.η_vec[i] - pwvr.η_vec[i-1])
 
             line += 1
             col += 1
