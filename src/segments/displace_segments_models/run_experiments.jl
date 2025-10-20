@@ -1,8 +1,6 @@
 include("../../pwldr.jl")
 include("../train_problems/shipment_planning.jl")
 include("../train_problems/network_flow_planning.jl")
-
-#Models
 include("black_box.jl")
 include("local_search.jl")
 
@@ -49,13 +47,12 @@ function shipment_planning_test(
 
     n_products = 5
     n_clients = 5
-    n_segments = [2, 3, 4, 5, 6]#, 7, 8, 9, 10]
+    n_segments = [2, 3, 4, 5, 6, 7, 8, 9, 10]
 
     displace_function = [("black_box", black_box!),
-                        ("ls_independent", local_search_independent!),
-                        ("ls_dependent", local_search!)]
+                        ("local_search", local_search!)]
 
-    checkpoint_file = "data/shipment_planning2.csv"
+    checkpoint_file = "data/shipment_planning.csv"
     
     if isfile(checkpoint_file)
         results_df = CSV.read(checkpoint_file, DataFrame)
@@ -94,7 +91,6 @@ function shipment_planning_test(
 
             samples_demand_train = eachcol(rand(dist, n_clients, n_samples_train))
             samples_demand_test = eachcol(rand(dist, n_clients, n_samples_test))
-            @show size(samples_demand_test)
 
             problem = ShipmentPlanning(
                 n_products,
@@ -121,7 +117,6 @@ function shipment_planning_test(
 
             # LDR Problem
             ## Demand Uncertainty
-            distribution_constructor = (a, b)-> truncated(dist, a, b)
             ldr_model = sp_ldr(problem, dist)
 
             reoptm_ldr = sp_second_stage(ldr_model, samples_demand_test)
@@ -135,9 +130,8 @@ function shipment_planning_test(
 
                 # Uniform segments
                 ## Demand Uncertainty
-                n_segments_vec = _segments_number(ldr; fix_n = seg)
-                pwldr = PWLDR(ldr, optimizer,
-                                distribution_constructor, n_segments_vec)
+                pwldr = PWLDR(ldr)
+                pwldr.n_segments_vec = _segments_number(ldr; fix_n = seg)
 
                 pwldr_model = SPModelPWLDR(problem, pwldr)
                 reoptm_pwldr_uniform = sp_second_stage(pwldr_model, samples_demand_test)
@@ -196,11 +190,10 @@ function network_flow_planning_test(
     n_nodes = 5
     n_edges = 7
     n_commodities = 3
-    n_segments = [2, 3, 4, 5, 6]#, 7, 8, 9, 10]
+    n_segments = [2, 3, 4, 5, 6, 7, 8, 9, 10]
 
     displace_function = [("black_box", black_box!),
-                        ("ls_independent", local_search_independent!),
-                        ("ls_dependent", local_search!)]
+                        ("local_search.jl", local_search!)]
 
     checkpoint_file = "data/network_flow_planning.csv"
 
@@ -251,7 +244,6 @@ function network_flow_planning_test(
             ws = nfp_ws(problem, samples_demand_test, samples_cost_test)
 
             # LDR Problem
-            distribution_constructor = (a, b)-> truncated(dist, a, b)
             ldr_model = nfp_ldr(problem, dist)
 
             reoptm_ldr = nfp_second_stage(ldr_model, samples_demand_test, samples_cost_test)
@@ -264,9 +256,8 @@ function network_flow_planning_test(
             for seg in n_segments
 
                 # Uniform segments
-                n_segments_vec = _segments_number(ldr; fix_n = seg)
-                pwldr = PWLDR(ldr, optimizer,
-                                distribution_constructor, n_segments_vec)
+                pwldr = PWLDR(ldr)
+                pwldr.n_segments_vec = _segments_number(ldr; fix_n = seg)
 
                 pwldr_model = NFPModelPWLDR(problem, pwldr)
                 reoptm_pwldr_uniform = nfp_second_stage(pwldr_model, samples_demand_test, samples_cost_test)
@@ -323,5 +314,5 @@ dist_list = [("Unif 10,90", Uniform(10, 90)),
             ]
 
 optimizer = HiGHS.Optimizer
-network_flow_planning_test(dist_list, optimizer, 200, 2000, 3)
-shipment_planning_test(dist_list, optimizer, 200, 2000, 3)
+shipment_planning_test(dist_list, optimizer, 200, 2000, 20)
+network_flow_planning_test(dist_list, optimizer, 200, 2000, 20)

@@ -38,7 +38,7 @@ set_silent(ldr)
     + sell_value * sell
 )
 optimize!(ldr)
-@show - objective_value(ldr)
+@show objective_value(ldr)
 
 model = PWLDR(ldr)
 optimize!(model)

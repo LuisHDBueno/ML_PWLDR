@@ -1,5 +1,3 @@
-module PiecewiseLDR
-
 using Distributions
 using Expectations
 using JuMP
@@ -308,7 +306,3 @@ function PWLDR(ldr_model::LinearDecisionRules.LDRModel)
 
     return empty_model
 end
-
-include("segments/displace_segments_models/black_box.jl")
-include("segments/displace_segments_models/local_search.jl")
-end #End module
