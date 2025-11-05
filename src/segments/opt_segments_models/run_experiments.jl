@@ -51,7 +51,7 @@ function shipment_planning_test(
 
     n_products = 5
     n_clients = 5
-    n_segments = [2, 3, 4, 5, 6, 7, 8, 9, 10]
+    n_segments = [2, 3, 4, 5, 6]
 
     displace_function = [("black_box", PiecewiseLDR.black_box!),
                         ("local_search", PiecewiseLDR.local_search!)]
@@ -194,7 +194,7 @@ function network_flow_planning_test(
     n_nodes = 5
     n_edges = 7
     n_commodities = 3
-    n_segments = [2, 3, 4, 5, 6, 7, 8, 9, 10]
+    n_segments = [2, 3, 4, 5, 6]
 
     displace_function = [("black_box", PiecewiseLDR.black_box!),
                         ("local_search.jl", PiecewiseLDR.local_search!)]
@@ -319,4 +319,4 @@ dist_list = [("Unif 10,90", Uniform(10, 90)),
 
 optimizer = HiGHS.Optimizer
 shipment_planning_test(dist_list, optimizer, 200, 2000, 20)
-network_flow_planning_test(dist_list, optimizer, 200, 2000, 20)
+#network_flow_planning_test(dist_list, optimizer, 200, 2000, 10)

@@ -8,7 +8,8 @@ struct NetworkFlowPlanning
     demand_samples::Matrix{Float64}
     cost_samples::Matrix{Float64}
     probs::Vector{Float64}
-    distribution
+    distribution::Distribution
+    penalty::Float64
     optimizer
 end
 
@@ -43,7 +44,16 @@ function generate_networkflow_problem(
     rng = Random.default_rng()
 )
 
+    #Build Spanning Tree
     edges = Set{Tuple{Int,Int}}()
+    perm = shuffle(collect(1:n_nodes), rng)
+    for i in 2:n_nodes
+        u = perm[i]
+        v = perm[rand(rng, 1:i-1)]
+        push!(edges, (u,v))
+    end
+
+    # Add extra edges
     while length(edges) < n_edges
         u, v = rand(rng, 1:n_nodes), rand(rng, 1:n_nodes)
         if u != v
@@ -70,6 +80,8 @@ function generate_networkflow_problem(
     samples_cost_train = rand(rng, dist, n_edges, n_samples_train)
     samples_cost_test  = rand(rng, dist, n_edges, n_samples_test)
 
+    penalty = 1e6
+
     problem = NetworkFlowPlanning(
         n_nodes,
         n_edges,
@@ -81,6 +93,7 @@ function generate_networkflow_problem(
         samples_cost_train,
         probs,
         dist,
+        penalty,
         optimizer
     )
 
@@ -98,6 +111,11 @@ function nfp_second_stage(
 
     u = sp_model.first_stage_decision
     @variable(model, f[1:problem.n_edges, 1:problem.n_commodities] .>= 0)
+    @variable(model, short[1:problem.n_commodities] .>= 0)
+    @variable(model, relax_pos[1:problem.n_edges, 1:problem.n_commodities] .>= 0)
+    @variable(model, relax_neg[1:problem.n_edges, 1:problem.n_commodities] .>= 0)
+
+    penalty = problem.penalty
 
     demand_constraints = Matrix{ConstraintRef}(undef, problem.n_commodities, problem.n_nodes)
     min_demand_constraints = Vector{ConstraintRef}(undef, problem.n_commodities)
@@ -108,11 +126,12 @@ function nfp_second_stage(
 
             demand_constraints[k, v] = @constraint(model,
                                             sum(f[e, k] for e in outgoing) -
-                                            sum(f[e, k] for e in incoming) == 0.0
+                                            sum(f[e, k] for e in incoming) +
+                                            relax_pos[v, k] - relax_neg[v, k] == 0.0
                                         )
         end
         incoming_dest = [e for (e,(i,j)) in enumerate(problem.edges) if j == dest]
-        min_demand_constraints[k] = @constraint(model, sum(f[e, k] for e in incoming_dest) >= 0.0)
+        min_demand_constraints[k] = @constraint(model, sum(f[e, k] for e in incoming_dest) + short[k] >= 0.0)
     end
 
     for e in 1:problem.n_edges
@@ -140,7 +159,10 @@ function nfp_second_stage(
         end
             
         expr = sum(problem.cap_cost[e] * u[e] for e in 1:problem.n_edges) +
-                sum(c[e] * f[e, k] for e in 1:problem.n_edges, k in 1:problem.n_commodities)
+                sum(c[e] * f[e, k] for e in 1:problem.n_edges, k in 1:problem.n_commodities) +
+                sum(penalty * short[k] for k in 1:problem.n_commodities) +
+                sum(penalty * (relax_pos[v,k] + relax_neg[v,k])
+                    for v in 1:problem.n_nodes, k in 1:problem.n_commodities)
 
         set_objective_function(model, expr)
 
@@ -157,18 +179,17 @@ function nfp_ldr(problem::NetworkFlowPlanning, dist)
 
     @variable(ldr, u[1:problem.n_edges] .>= 0, LinearDecisionRules.FirstStage)
     @variable(ldr, f[1:problem.n_edges, 1:problem.n_commodities] .>= 0)
+    @variable(ldr, short[1:problem.n_commodities] .>= 0)
+    @variable(ldr, relax_pos[1:problem.n_edges, 1:problem.n_commodities] .>= 0)
+    @variable(ldr, relax_neg[1:problem.n_edges, 1:problem.n_commodities] .>= 0)
 
+    penalty = problem.penalty
 
-    @variable(ldr, d[1:problem.n_commodities] in LinearDecisionRules.Uncertainty(
-        distribution = product_distribution([
-                                        dist for _ in 1:problem.n_commodities
-                                    ])
-    ))
-    @variable(ldr, c[1:problem.n_edges] in LinearDecisionRules.Uncertainty(
-        distribution = product_distribution([
-                                        dist for _ in 1:problem.n_edges
-                                    ])
-    ))
+    @variable(ldr, d[i = 1:problem.n_commodities] in 
+                LinearDecisionRules.ScalarUncertainty(dist))
+
+    @variable(ldr, c[i = 1:problem.n_edges] in
+                LinearDecisionRules.ScalarUncertainty(dist))
 
     for (k, (orig, dest)) in enumerate(problem.commodities)
         for v in 1:problem.n_nodes
@@ -184,12 +205,13 @@ function nfp_ldr(problem::NetworkFlowPlanning, dist)
 
             @constraint(ldr,
                 sum(f[e, k] for e in outgoing) -
-                sum(f[e, k] for e in incoming) == rhs
+                sum(f[e, k] for e in incoming) +
+                relax_pos[v, k] - relax_neg[v, k]== rhs
             )
         end
         incoming_dest = [e for (e,(i,j)) in enumerate(problem.edges) if j == dest]
         @constraint(ldr,
-            sum(f[e, k] for e in incoming_dest) >= d[k]
+            sum(f[e, k] for e in incoming_dest) >= d[k] - short[k]
         )
     end
 
@@ -199,7 +221,10 @@ function nfp_ldr(problem::NetworkFlowPlanning, dist)
 
     @objective(ldr, Min,
         sum(problem.cap_cost[e] * u[e] for e in 1:problem.n_edges) +
-        sum(c[e] * f[e, k] for e in 1:problem.n_edges, k in 1:problem.n_commodities)
+        sum(c[e] * f[e, k] for e in 1:problem.n_edges, k in 1:problem.n_commodities) +
+        sum(penalty * short[k] for k in 1:problem.n_commodities) +
+        sum(penalty * (relax_pos[v,k] + relax_neg[v,k])
+            for v in 1:problem.n_nodes, k in 1:problem.n_commodities)
     )
 
     optimize!(ldr)
@@ -223,6 +248,11 @@ function nfp_standard_form(problem::NetworkFlowPlanning)
 
     # 2 Stage
     @variable(model, f[1:problem.n_edges, 1:problem.n_commodities, 1:S] .>= 0)
+    @variable(model, short[1:problem.n_commodities, 1:S] .>= 0)
+    @variable(model, relax_pos[1:problem.n_edges, 1:problem.n_commodities, 1:S] .>= 0)
+    @variable(model, relax_neg[1:problem.n_edges, 1:problem.n_commodities, 1:S] .>= 0)
+
+    penalty = problem.penalty
 
     for s in 1:S
         d = problem.demand_samples[:, s]
@@ -240,11 +270,12 @@ function nfp_standard_form(problem::NetworkFlowPlanning)
 
                 @constraint(model,
                     sum(f[e, k, s] for e in outgoing) -
-                    sum(f[e, k, s] for e in incoming) == rhs
+                    sum(f[e, k, s] for e in incoming) +
+                    relax_pos[v,k,s] - relax_neg[v,k,s] == rhs
                 )
             end
             incoming_dest = [e for (e,(i,j)) in enumerate(problem.edges) if j == dest]
-            @constraint(model, sum(f[e, k, s] for e in incoming_dest) >= d[k])
+            @constraint(model, sum(f[e, k, s] for e in incoming_dest) >= d[k] - short[k, s])
         end
         for e in 1:problem.n_edges
             @constraint(model, sum(f[e, k, s] for k in 1:problem.n_commodities) <= u[e])
@@ -260,7 +291,12 @@ function nfp_standard_form(problem::NetworkFlowPlanning)
         expr_second += p * sum(c_s[e] * f[e,k,s] for e in 1:problem.n_edges, k in 1:problem.n_commodities)
     end
 
-    @objective(model, Min, expr_first + expr_second)
+    expr_penalty =  sum(problem.probs[s] * penalty * short[k,s]
+                        for s in 1:S, k in 1:problem.n_commodities) +
+                    sum(problem.probs[s] * penalty * (relax_pos[v,k,s] + relax_neg[v,k,s])
+                        for s in 1:S, v in 1:problem.n_nodes, k in 1:problem.n_commodities)
+
+    @objective(model, Min, expr_first + expr_second + expr_penalty)
 
     optimize!(model)
     u_sol = value.(u)
@@ -275,6 +311,11 @@ function nfp_eev(problem::NetworkFlowPlanning)
 
     @variable(model, u[1:problem.n_edges] .>= 0)
     @variable(model, f[1:problem.n_edges, 1:problem.n_commodities] .>= 0)
+    @variable(model, short[1:problem.n_commodities] .>= 0)
+    @variable(model, relax_pos[1:problem.n_edges, 1:problem.n_commodities] .>= 0)
+    @variable(model, relax_neg[1:problem.n_edges, 1:problem.n_commodities] .>= 0)
+    
+    penalty = problem.penalty
 
     for (k, (orig, dest)) in enumerate(problem.commodities)
         for v in 1:problem.n_nodes
@@ -290,11 +331,12 @@ function nfp_eev(problem::NetworkFlowPlanning)
 
             @constraint(model,
                 sum(f[e, k] for e in outgoing) -
-                sum(f[e, k] for e in incoming) == rhs
+                sum(f[e, k] for e in incoming) +
+                relax_pos[v, k] - relax_neg[v, k] == rhs
             )
         end
         incoming_dest = [e for (e,(i,j)) in enumerate(problem.edges) if j == dest]
-        @constraint(model, sum(f[e, k] for e in incoming_dest) >= Distributions.mean(problem.distribution))
+        @constraint(model, sum(f[e, k] for e in incoming_dest) >= Distributions.mean(problem.distribution) - short[k])
     end
 
     for e in 1:problem.n_edges
@@ -303,7 +345,11 @@ function nfp_eev(problem::NetworkFlowPlanning)
 
     @objective(model, Min,
         sum(problem.cap_cost[e] * u[e] for e in 1:problem.n_edges) +
-        sum(Distributions.mean(problem.distribution) * f[e, k] for e in 1:problem.n_edges, k in 1:problem.n_commodities)
+        sum(Distributions.mean(problem.distribution) * f[e, k]
+            for e in 1:problem.n_edges, k in 1:problem.n_commodities) +
+        sum(penalty * short[k] for k in 1:problem.n_commodities) +
+        sum(penalty * (relax_pos[v,k] + relax_neg[v,k])
+            for v in 1:problem.n_nodes, k in 1:problem.n_commodities)
     )
 
     optimize!(model)
@@ -324,6 +370,11 @@ function nfp_ws(
 
     @variable(model, u[1:problem.n_edges] .>= 0)
     @variable(model, f[1:problem.n_edges, 1:problem.n_commodities] .>= 0)
+    @variable(model, short[1:problem.n_commodities] .>= 0)
+    @variable(model, relax_pos[1:problem.n_edges, 1:problem.n_commodities] .>= 0)
+    @variable(model, relax_neg[1:problem.n_edges, 1:problem.n_commodities] .>= 0)
+
+    penalty = problem.penalty
 
     demand_constraints = Matrix{ConstraintRef}(undef, problem.n_commodities, problem.n_nodes)
     min_demand_constraints = Vector{ConstraintRef}(undef, problem.n_commodities)
@@ -334,11 +385,12 @@ function nfp_ws(
 
             demand_constraints[k, v] = @constraint(model,
                                             sum(f[e, k] for e in outgoing) -
-                                            sum(f[e, k] for e in incoming) == 0.0
+                                            sum(f[e, k] for e in incoming) +
+                                            relax_pos[v, k] - relax_neg[v, k] == 0.0
                                         )
         end
         incoming_dest = [e for (e,(i,j)) in enumerate(problem.edges) if j == dest]
-        min_demand_constraints[k] = @constraint(model, sum(f[e, k] for e in incoming_dest) >= 0.0)
+        min_demand_constraints[k] = @constraint(model, sum(f[e, k] for e in incoming_dest) + short[k] >= 0.0)
     end
 
     for e in 1:problem.n_edges
@@ -360,12 +412,14 @@ function nfp_ws(
                 end
                 set_normalized_rhs(demand_constraints[k, v], rhs)
             end
-            set_normalized_rhs(min_demand_constraints[k], d[k])
         end
         
         @objective(model, Min,
             sum(problem.cap_cost[e] * u[e] for e in 1:problem.n_edges) +
-            sum(c[e] * f[e, k] for e in 1:problem.n_edges, k in 1:problem.n_commodities)
+            sum(c[e] * f[e, k] for e in 1:problem.n_edges, k in 1:problem.n_commodities) +
+            sum(penalty * short[k] for k in 1:problem.n_commodities) +
+            sum(penalty * (relax_pos[v,k] + relax_neg[v,k])
+                for v in 1:problem.n_nodes, k in 1:problem.n_commodities)
         )
 
         optimize!(model)

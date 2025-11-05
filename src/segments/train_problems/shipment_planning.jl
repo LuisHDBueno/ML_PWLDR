@@ -85,12 +85,8 @@ function sp_ldr(
     @variable(ldr, buy_2[1:problem.n_products] .>= 0)
     @variable(ldr, ship[1:problem.n_products, 1:problem.n_clients] .>= 0)
 
-    @variable(ldr, demand[1:problem.n_clients] in LinearDecisionRules.Uncertainty(;
-                                    distribution = product_distribution([
-                                        dist for _ in 1:problem.n_clients
-                                    ]),
-                                    )
-                )
+    distributions = [dist for _ in 1:problem.n_clients]
+    @variable(ldr, demand[i = 1:problem.n_clients] in LinearDecisionRules.ScalarUncertainty(distributions[i]))
 
     for j in 1:problem.n_clients
         @constraint(ldr, sum(ship[i, j] for i in 1:problem.n_products) >= demand[j])
