@@ -8,6 +8,7 @@ module PiecewiseLDR
     using LinearAlgebra
     using SparseArrays
     using BlackBoxOptim
+    using JSON
     import JuMP: optimize!, objective_value, getindex
 
     include("pwrv.jl")
@@ -15,5 +16,7 @@ module PiecewiseLDR
     include("second_moment.jl")
     include("pwldr.jl")
     include("segments/opt_segments.jl")
+    include("segments/number_segments_models/vector_representation.jl")
+    include("segments/number_segments_models/regression.jl")
 
 end #End module

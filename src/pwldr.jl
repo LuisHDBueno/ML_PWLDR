@@ -177,6 +177,12 @@ function _build_problem!(
     h = _build_h(pwvr_list)
     nW = size(W, 1)
 
+    # Equality constraints
+    if size(ABC.Be, 1) > 0
+        Be = _build_B(ABC.Be, n_segments_vec)
+        @constraint(model, ABC.Ae * X .== Be)
+    end
+
     # Inequality contraints
     if size(ABC.Bu, 1) > 0
         Bu = _build_B(ABC.Bu, n_segments_vec)

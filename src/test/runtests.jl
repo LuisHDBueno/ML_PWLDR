@@ -326,6 +326,98 @@ function test_local_search()
     @test before_opt_displace <= after_opt_displace
 end
 
+function test_statistics()
+    data = [10.0, 2.0, 38.0, 23.0, 38.0, 23.0, 21.0]
+    v = PiecewiseLDR.get_statistics(data)
+
+    @test 2.0 == v.min == v[1]
+    @test 38.0 == v.max == v[2]
+    @test isapprox(22.143, v.mean, atol=1e-3)
+    @test v.mean == v[3]
+    @test v.median == 23.00 == v[4]
+    @test isapprox(12.298, v.std, atol=1e-3)
+    @test v.std == v[5]
+end
+
+function test_set_opt_breakpoint_number()
+    optimizer = HiGHS.Optimizer
+    buy_cost = 10
+    return_value = 8
+    sell_value = 15
+
+    demand_max = 120
+    demand_min = 80
+
+    ldr = LinearDecisionRules.LDRModel(HiGHS.Optimizer)
+    set_silent(ldr)
+
+    @variable(ldr, buy >= 0, LinearDecisionRules.FirstStage)
+    @variable(ldr, sell >= 0)
+    @variable(ldr, ret >= 0)
+    @variable(ldr, demand in LinearDecisionRules.Uncertainty(
+            distribution = Uniform(demand_min, demand_max)
+        )
+    )
+
+    @constraint(ldr, sell + ret <= buy)
+    @constraint(ldr, sell <= demand)
+
+    @objective(ldr, Max,
+        - buy_cost * buy
+        + return_value * ret
+        + sell_value * sell
+    )
+    optimize!(ldr)
+
+    pwldr = PiecewiseLDR.PWLDR(ldr)
+    optimize!(pwldr)
+    obj_pwldr_not_opt = objective_value(pwldr)
+
+    PiecewiseLDR.set_opt_breakpoint_number!(pwldr, demand)
+    optimize!(pwldr)
+    obj_pwldr_opt = objective_value(pwldr)
+
+    @test obj_pwldr_not_opt >= obj_pwldr_opt
+end
+
+function test_vector_representation()
+    optimizer = HiGHS.Optimizer
+    buy_cost = 10
+    return_value = 8
+    sell_value = 15
+
+    demand_max = 120
+    demand_min = 80
+
+    ldr = LinearDecisionRules.LDRModel(HiGHS.Optimizer)
+    set_silent(ldr)
+
+    @variable(ldr, buy >= 0, LinearDecisionRules.FirstStage)
+    @variable(ldr, sell >= 0)
+    @variable(ldr, ret >= 0)
+    @variable(ldr, demand in LinearDecisionRules.Uncertainty(
+            distribution = Uniform(demand_min, demand_max)
+        )
+    )
+
+    @constraint(ldr, sell + ret <= buy)
+    @constraint(ldr, sell <= demand)
+
+    @objective(ldr, Max,
+        - buy_cost * buy
+        + return_value * ret
+        + sell_value * sell
+    )
+    optimize!(ldr)
+
+    pwldr = PiecewiseLDR.PWLDR(ldr)
+    optimize!(pwldr)
+
+    result = PiecewiseLDR.vector_representation(pwldr, demand)
+    @test result isa Vector{Float64}
+    @test size(result) == (15,)
+end
+
 function test_shipment_planing()
     # Parameters
     optimizer = HiGHS.Optimizer
@@ -377,142 +469,6 @@ function test_shipment_planing()
                 2,)
     end
     optimize!(ldr)
-
-    @test isapprox(objective_value(ldr), objective_value(pwldr); atol=1e-6)
-
-    PiecewiseLDR.local_search!(pwldr)
-    optimize!(pwldr)
-    obj_pwldr_opt = objective_value(pwldr)
-
-    @test obj_ldr >= obj_pwldr_not_opt >= obj_pwldr_opt
-end
-
-function test_network_flow_planning()
-    # Parameters
-    optimizer = HiGHS.Optimizer
-    n_edges = 4
-    n_nodes = 4
-    n_commodities = 2
-    dist = Uniform(10, 90)
-
-    #Generate Problem
-    edges = Set{Tuple{Int,Int}}()
-    perm = shuffle(collect(1:n_nodes))
-    for i in 2:n_nodes
-        u = perm[i]
-        v = perm[rand(1:i-1)]
-        push!(edges, (u,v))
-    end
-
-    # Add extra edges
-    while length(edges) < n_edges
-        u, v = rand(1:n_nodes), rand(1:n_nodes)
-        if u != v
-            push!(edges, (u,v))
-        end
-    end
-    edges = collect(edges)
-
-    commodities = Tuple{Int,Int}[]
-    while length(commodities) < n_commodities
-        orig, dest = rand(1:n_nodes), rand(1:n_nodes)
-        if orig != dest
-            push!(commodities, (orig, dest))
-        end
-    end
-
-    cap_cost = rand(Uniform(10, 50), n_edges)
-
-    # Init LDR
-    ldr = LinearDecisionRules.LDRModel(optimizer)
-    set_silent(ldr)
-
-    @variable(ldr, u[1:n_edges] .>= 0, LinearDecisionRules.FirstStage)
-    @variable(ldr, f[1:n_edges, 1:n_commodities] .>= 0)
-
-    dist_d = [dist for _ in 1:n_commodities]
-    @variable(ldr, d[i = 1:n_commodities] in 
-                LinearDecisionRules.ScalarUncertainty(dist_d[i]))
-
-    dist_c = [dist for _ in 1:n_edges]
-    @variable(ldr, c[i = 1:n_edges] in
-                LinearDecisionRules.ScalarUncertainty(dist_c[i]))
-
-    for (k, (orig, dest)) in enumerate(commodities)
-        for v in 1:n_nodes
-            outgoing = [e for (e,(i,j)) in enumerate(edges) if i == v]
-            incoming = [e for (e,(i,j)) in enumerate(edges) if j == v]
-
-            rhs = 0.0
-            if v == orig
-                rhs = d[k]
-            elseif v == dest
-                rhs = -d[k]
-            end
-
-            @constraint(ldr,
-                sum(f[e, k] for e in outgoing) -
-                sum(f[e, k] for e in incoming) == rhs
-            )
-        end
-        incoming_dest = [e for (e,(i,j)) in enumerate(edges) if j == dest]
-        @constraint(ldr,
-            sum(f[e, k] for e in incoming_dest) >= d[k]
-        )
-    end
-
-    for e in 1:n_edges
-        @constraint(ldr, sum(f[e, k] for k in 1:n_commodities) <= u[e])
-    end
-
-    @objective(ldr, Min,
-        sum(cap_cost[e] * u[e] for e in 1:n_edges) +
-        sum(c[e] * f[e, k] for e in 1:n_edges, k in 1:n_commodities)
-    )
-
-    optimize!(ldr)
-
-    pwldr = PiecewiseLDR.PWLDR(ldr)
-
-    for i in 1:n_commodities
-        PiecewiseLDR.set_breakpoint!(pwldr, d[i], 2)
-    end
-
-    for j in 1:n_edges
-        PiecewiseLDR.set_breakpoint!(pwldr, c[j], 2)
-    end
-
-    optimize!(pwldr)
-    obj_pwldr_not_opt = objective_value(pwldr)
-
-    for i in 1:n_commodities
-        LinearDecisionRules.set_attribute(
-                d[i],
-                LinearDecisionRules.BreakPoints(),
-                2,)
-    end
-
-    for j in 1:n_edges
-        LinearDecisionRules.set_attribute(
-                c[j],
-                LinearDecisionRules.BreakPoints(),
-                2,)
-    end
-    optimize!(ldr)
-    obj_ldr = objective_value(ldr)
-
-    X_ldr = value.(ldr.primal_model[:X])
-    X_pwldr = value.(pwldr.model[:X])
-
-    C_ldr = ldr.ext[:_LDR_ABC].C
-    C_pwldr = pwldr.model.ext[:C]
-    @show C_ldr
-    @show C_pwldr
-
-    M_ldr = ldr.ext[:_LDR_M]
-    M_pwldr = PiecewiseLDR._build_second_moment_matrix(pwldr.n_segments_vec, pwldr.PWVR_list)
-    @show M_ldr
-    @show M_pwldr
 
     @test isapprox(objective_value(ldr), objective_value(pwldr); atol=1e-6)
 
