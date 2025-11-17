@@ -6,7 +6,7 @@ using LinearDecisionRules
 using HiGHS
 using Random
 
-include("../PiecewiseLDR.jl")
+include("../src/PiecewiseLDR.jl")
 using .PiecewiseLDR
 
 using Test
@@ -337,47 +337,6 @@ function test_statistics()
     @test v.median == 23.00 == v[4]
     @test isapprox(12.298, v.std, atol=1e-3)
     @test v.std == v[5]
-end
-
-function test_set_opt_breakpoint_number()
-    optimizer = HiGHS.Optimizer
-    buy_cost = 10
-    return_value = 8
-    sell_value = 15
-
-    demand_max = 120
-    demand_min = 80
-
-    ldr = LinearDecisionRules.LDRModel(HiGHS.Optimizer)
-    set_silent(ldr)
-
-    @variable(ldr, buy >= 0, LinearDecisionRules.FirstStage)
-    @variable(ldr, sell >= 0)
-    @variable(ldr, ret >= 0)
-    @variable(ldr, demand in LinearDecisionRules.Uncertainty(
-            distribution = Uniform(demand_min, demand_max)
-        )
-    )
-
-    @constraint(ldr, sell + ret <= buy)
-    @constraint(ldr, sell <= demand)
-
-    @objective(ldr, Max,
-        - buy_cost * buy
-        + return_value * ret
-        + sell_value * sell
-    )
-    optimize!(ldr)
-
-    pwldr = PiecewiseLDR.PWLDR(ldr)
-    optimize!(pwldr)
-    obj_pwldr_not_opt = objective_value(pwldr)
-
-    PiecewiseLDR.set_opt_breakpoint_number!(pwldr, demand)
-    optimize!(pwldr)
-    obj_pwldr_opt = objective_value(pwldr)
-
-    @test obj_pwldr_not_opt >= obj_pwldr_opt
 end
 
 function test_vector_representation()

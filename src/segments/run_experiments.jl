@@ -58,6 +58,7 @@ function get_data(
     n_problems::Int,
     optimizer
 )
+    Random.seed!(1234)
     displace_function = [("black_box", PiecewiseLDR.black_box!),
                         ("local_search", PiecewiseLDR.local_search!)]
     list_bp = [i for i in 1:max_bp]
@@ -65,7 +66,8 @@ function get_data(
     regular_metrics = DataFrame(
         idx_p = Int[],
         metric = String[],
-        value = Float64[]
+        value = Float64[],
+        time = Float64[]
     )
 
     vector_cols = [Symbol("v$i") for i in 1:15]
@@ -85,7 +87,8 @@ function get_data(
         metric = String[],
         value_uni = Float64[],
         value_opt = Float64[],
-        time = Float64[]
+        time_uni = Float64[],
+        time_opt = Float64[]
     )
 
     for idx_p in 1:n_problems
@@ -93,28 +96,56 @@ function get_data(
                                             n_samples_test, optimizer)
 
         # Standart Model
+        init_time = time()
         std = problem_setup.std(problem)
-        push!(regular_metrics, (idx_p = idx_p, value = std.objective_value, metric ="obj_std"))
+        end_time = time()
+        push!(regular_metrics, (idx_p = idx_p, value = std.objective_value,
+                                metric ="obj_std", time = end_time - init_time))
+
+        init_time = time()
         reoptm_std = problem_setup.second_stage(std, problem.samples_test)
-        push!(regular_metrics, (idx_p = idx_p, value = reoptm_std, metric = "reopt_std"))
+        end_time = time()
+        push!(regular_metrics, (idx_p = idx_p, value = reoptm_std,
+                                metric = "reopt_std", time = end_time - init_time))
 
         # Determinist Model
+        init_time = time()
         deterministic = problem_setup.deterministic(problem)
-        push!(regular_metrics, (idx_p = idx_p, value = deterministic.objective_value, metric = "deterministic"))
+        end_time = time()
+        push!(regular_metrics, (idx_p = idx_p, value = deterministic.objective_value,
+                                metric = "deterministic", time = end_time - init_time))
+
+        init_time = time()
         reoptm_deterministic = problem_setup.second_stage(deterministic, problem.samples_test)
-        push!(regular_metrics, (idx_p = idx_p, value = reoptm_deterministic, metric = "reopt_deterministic"))
+        end_time = time()                       
+        push!(regular_metrics, (idx_p = idx_p, value = reoptm_deterministic,
+                                metric = "reopt_deterministic", time = end_time - init_time))
 
         # Wait-and-see
+        init_time = time()
         ws = problem_setup.ws(problem)
-        push!(regular_metrics, (idx_p = idx_p, value = ws, metric = "ws"))
+        end_time = time()
+        push!(regular_metrics, (idx_p = idx_p, value = ws,
+                                metric = "ws", time = end_time - init_time))
 
         # LDR
+        init_time = time()
         ldr_model = problem_setup.ldr(problem)
-        push!(regular_metrics, (idx_p = idx_p, value = ldr_model.objective_value, metric = "obj_ldr"))
+        end_time = time()
+        push!(regular_metrics, (idx_p = idx_p, value = ldr_model.objective_value,
+                                metric = "obj_ldr", time = end_time - init_time))
+
+        init_time = time()
         reoptm_ldr = problem_setup.second_stage(ldr_model, problem.samples_test)
-        push!(regular_metrics, (idx_p = idx_p, value = reoptm_ldr, metric = "reopt_ldr"))
+        end_time = time()
+        push!(regular_metrics, (idx_p = idx_p, value = reoptm_ldr,
+                                metric = "reopt_ldr", time = end_time - init_time))
+
+        init_time = time()
         dr_ldr = dr_ldr_calc(ldr_model.model, problem.samples_test)
-        push!(regular_metrics, (idx_p = idx_p, value = dr_ldr, metric = "dr_ldr"))
+        end_time = time()
+        push!(regular_metrics, (idx_p = idx_p, value = dr_ldr,
+                                metric = "dr_ldr", time = end_time - init_time))
 
         name = problem_setup.name
         CSV.write("data/$(name)_regular_metrics.csv", regular_metrics)
@@ -137,7 +168,10 @@ function get_data(
 
             for nb in list_bp
                 PiecewiseLDR.set_breakpoint!(pwldr, variable, nb)
+                init_time = time()
                 optimize!(pwldr)
+                end_time = time()
+                time_uni = end_time - init_time
                 obj_uni = objective_value(pwldr)
                 dr_uni = dr_pwldr_calc(pwldr, problem.samples_test)
                 pwldr_inst = ProblemInstancePWLDR(problem, pwldr)
@@ -157,19 +191,19 @@ function get_data(
                         (idx_p = idx_p, idx_v = idx_v, nb = nb,
                         displace_func = func_name, metric = "obj_pwldr",
                         value_uni = obj_uni, value_opt = obj_opt,
-                        time = end_time - init_time
+                        time_opt = end_time - init_time, time_uni = time_uni
                         ), promote = true)
                     push!(pwldr_metrics,
                         (idx_p = idx_p, idx_v = idx_v, nb = nb,
                         displace_func = func_name, metric = "dr_pwldr",
                         value_uni = dr_uni, value_opt = dr_opt,
-                        time = end_time - init_time
+                        time_opt = end_time - init_time, time_uni = time_uni
                         ), promote = true)
                     push!(pwldr_metrics,
                         (idx_p = idx_p, idx_v = idx_v, nb = nb,
                         displace_func = func_name, metric = "reopt_pwldr",
                         value_uni = reopt_uni, value_opt = reopt_opt,
-                        time = end_time - init_time
+                        time_opt = end_time - init_time, time_uni = time_uni
                         ), promote = true)
 
                     CSV.write("data/$(name)_pwldr_metrics.csv", pwldr_metrics)
@@ -200,11 +234,7 @@ dist_list = [
     # (Criada truncando uma Normal com variância muito alta)
     truncated(Normal(50, 40), 10, 90)
 ]
-#Random.seed!(1234)
-#get_data(ShipmentPlanningSetup, dist_list, 10, 200, 2000, 30, HiGHS.Optimizer)
 
-#Random.seed!(1234)
-#get_data(CapacityExpansionSetup, dist_list, 10, 200, 2000, 20, HiGHS.Optimizer)
-
-Random.seed!(1234)
-get_data(NetworkFlowAllocationSetup, dist_list, 10, 200, 2000, 20, HiGHS.Optimizer)
+get_data(ShipmentPlanningSetup, dist_list, 10, 200, 2000, 1, HiGHS.Optimizer)
+#get_data(CapacityExpansionSetup, dist_list, 10, 200, 2000, 1, HiGHS.Optimizer)
+#get_data(NetworkFlowAllocationSetup, dist_list, 10, 200, 2000, 1, HiGHS.Optimizer)

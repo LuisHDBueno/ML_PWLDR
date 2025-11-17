@@ -315,9 +315,43 @@ function update_breakpoints!(
     pwldr::PWLDR,
     weight_vec::Vector{Vector{Float64}}
 )
-    function delete_matrix_constraint(model, matrix_constraint)
-        for constr in matrix_constraint
-            delete(model, constr)
+
+    function update_W_constraints_inplace!(
+        constraints_matrix::Matrix{ConstraintRef},
+        variables::Matrix{VariableRef}, 
+        new_W::SparseArrays.SparseMatrixCSC{Float64, Int64}
+    )
+        
+        n_sl, n_xi = size(constraints_matrix)
+        n_w = size(variables, 2)
+        
+        for i in 1:n_sl
+            for j in 1:n_xi
+                con_ref = constraints_matrix[i, j]
+                for k in 1:n_w
+                    var_ref = variables[i, k]
+                    new_coeff = new_W[k, j]
+                    JuMP.set_normalized_coefficient(con_ref, var_ref, new_coeff)
+                end
+                
+            end
+        end
+    end
+
+    function update_h_constraints_inplace!(
+        constraints_vector::Vector{ConstraintRef},
+        variables::Matrix{VariableRef}, 
+        new_h::Vector{Float64}
+    )
+        n_sl, n_w = size(variables)
+        
+        for i in 1:n_sl
+            con_ref = constraints_vector[i]
+            for k in 1:n_w
+                var_ref = variables[i, k]
+                new_coeff = new_h[k]
+                JuMP.set_normalized_coefficient(con_ref, var_ref, new_coeff)
+            end
         end
     end
 
@@ -327,46 +361,55 @@ function update_breakpoints!(
 
     W = _build_W(pwldr.n_segments_vec, pwldr.PWVR_list)
     h = _build_h(pwldr.PWVR_list)
+
     model = pwldr.model
+
     if haskey(pwldr.W_constraints, :upper_ineq)
-        delete_matrix_constraint(model, pwldr.W_constraints[:upper_ineq])
-        delete(model, pwldr.h_constraints[:upper_ineq])
         ΛSu = model[:ΛSu]
-        Su = model[:Su]
-        pwldr.W_constraints[:upper_ineq] = @constraint(model, ΛSu * W .== Su)
-        pwldr.h_constraints[:upper_ineq] = @constraint(model, ΛSu * h .>= 0)
+        update_W_constraints_inplace!(
+            pwldr.W_constraints[:upper_ineq], ΛSu, W)
+
+        update_h_constraints_inplace!(
+            pwldr.h_constraints[:upper_ineq], ΛSu, h
+        )
     end
 
     if haskey(pwldr.W_constraints, :lower_ineq)
-        delete_matrix_constraint(model, pwldr.W_constraints[:lower_ineq])
-        delete(model, pwldr.h_constraints[:lower_ineq])
-        ΛSl = model[:ΛSl]
-        Sl = model[:Sl]
-        pwldr.W_constraints[:lower_ineq] = @constraint(model, ΛSl * W .== Sl)
-        pwldr.h_constraints[:lower_ineq] = @constraint(model, ΛSl * h .>= 0)
+        ΛSl  = model[:ΛSl]
+
+        update_W_constraints_inplace!(
+            pwldr.W_constraints[:lower_ineq], ΛSl, W)
+
+        update_h_constraints_inplace!(
+            pwldr.h_constraints[:lower_ineq], ΛSl, h
+        )
     end
 
     if haskey(pwldr.W_constraints, :upper_x)
-        delete_matrix_constraint(model, pwldr.W_constraints[:upper_x])
-        delete(model, pwldr.h_constraints[:upper_x])
-        ΛSxu = model[:ΛSxu]
-        Sxu = model[:Sxu]
-        pwldr.W_constraints[:upper_x] = @constraint(model, ΛSxu.data * W .== Sxu.data)
-        pwldr.h_constraints[:upper_x] = @constraint(model, ΛSxu.data * h .>= 0)
+        ΛSxu = model[:ΛSxu].data
+
+        update_W_constraints_inplace!(
+            pwldr.W_constraints[:upper_x], ΛSxu, W)
+
+        update_h_constraints_inplace!(
+            pwldr.h_constraints[:upper_x], ΛSxu, h
+        )
     end
 
     if haskey(pwldr.W_constraints, :lower_x)
-        delete_matrix_constraint(model, pwldr.W_constraints[:lower_x])
-        delete(model, pwldr.h_constraints[:lower_x])
-        ΛSxl = model[:ΛSxl]
-        Sxl = model[:Sxl]
-        pwldr.W_constraints[:lower_x] = @constraint(model, ΛSxl.data * W .== Sxl.data)
-        pwldr.h_constraints[:lower_x] = @constraint(model, ΛSxl.data * h .>= 0)
+        ΛSxl = model[:ΛSxl].data
+        update_W_constraints_inplace!(
+            pwldr.W_constraints[:lower_x], ΛSxl, W)
+
+        update_h_constraints_inplace!(
+            pwldr.h_constraints[:lower_x], ΛSxl, h
+        )
+
     end
 
     X = model[:X]
     C = model.ext[:C]
-    
+
     M = _build_second_moment_matrix(pwldr.n_segments_vec, pwldr.PWVR_list)
 
     if model.ext[:sense] == MOI.MIN_SENSE
