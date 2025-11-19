@@ -9,6 +9,9 @@ using Random
 include("../src/PiecewiseLDR.jl")
 using .PiecewiseLDR
 
+include("../src/segments/train_problems/problem_setup.jl")
+include("../src/segments/train_problems/shipment_planning.jl")
+
 using Test
 
 function runtests()
@@ -380,62 +383,43 @@ end
 function test_shipment_planing()
     # Parameters
     optimizer = HiGHS.Optimizer
-    n_products = 1
-    n_clients = 2
-    prod_cost_1 = rand(Uniform(50, 100), n_products)
-    prod_cost_2 = prod_cost_1 .+ rand(Uniform(99, 100), n_products)
-    client_cost = rand(Uniform(25, 50), n_products, n_clients)
-    dist = Uniform(10, 90)
+    setup = ShipmentPlanningSetup
+    dist_list = [
+                    Uniform(10, 90),
+                    truncated(Normal(50, 15), 10, 90),
+                    MixtureModel([
+                        truncated(Normal(30, 8), 10, 90),
+                        truncated(Normal(70, 8), 10, 90)
+                    ]),
+                    truncated(Normal(50, 40), 10, 90)
+                ]
+    n_samples_train = 100
+    n_samples_test = 1000
+    problem = setup.gen_metadata(dist_list, n_samples_train,
+                                            n_samples_test, optimizer)
+    std = setup.std(problem)
+    reoptm_std = setup.second_stage(std, problem.samples_test)
 
-    ldr = LinearDecisionRules.LDRModel(optimizer)
-    set_silent(ldr)
+    deterministic = setup.deterministic(problem)
+    reoptm_deterministic = setup.second_stage(deterministic, problem.samples_test)
 
-    @variable(ldr, buy_1[1:n_products] .>= 0, LinearDecisionRules.FirstStage)
-    @variable(ldr, buy_2[1:n_products] .>= 0)
-    @variable(ldr, ship[1:n_products, 1:n_clients] .>= 0)
+    ws = setup.ws(problem)
 
-    distributions = [dist for _ in 1:n_clients]
-    @variable(ldr, demand[i = 1:n_clients] in LinearDecisionRules.ScalarUncertainty(distributions[i]))
+    @test ws <= reoptm_std <= reoptm_deterministic
 
-    for j in 1:n_clients
-        @constraint(ldr, sum(ship[i, j] for i in 1:n_products) >= demand[j])
+    ldr_model = setup.ldr(problem)
+    ldr_obj = ldr_model.objective_value
+
+    pwldr = PiecewiseLDR.PWLDR(ldr_model.model)
+    for (idx_v, variable) in enumerate(keys(pwldr.uncertainty_to_distribution))
+        PiecewiseLDR.set_breakpoint!(pwldr, variable, 2)
     end
-    for i in 1:n_products
-        @constraint(ldr, sum(ship[i, j] for j in 1:n_clients) <= buy_1[i] + buy_2[i])
-    end
-
-    @objective(ldr, Min,
-                + sum(prod_cost_1 .* buy_1)
-                + sum(prod_cost_2 .* buy_2)
-                + sum(sum(client_cost .* ship)))
-            
-    optimize!(ldr)
-    obj_ldr = objective_value(ldr)
-
-    pwldr = PiecewiseLDR.PWLDR(ldr)
-
-    for i in 1:n_clients
-        PiecewiseLDR.set_breakpoint!(pwldr, demand[i], 2)
-    end
-
     optimize!(pwldr)
-    obj_pwldr_not_opt = objective_value(pwldr)
-
-    for i in 1:n_clients
-        LinearDecisionRules.set_attribute(
-                demand[i],
-                LinearDecisionRules.BreakPoints(),
-                2,)
-    end
-    optimize!(ldr)
-
-    @test isapprox(objective_value(ldr), objective_value(pwldr); atol=1e-6)
-
+    pwldr_uni = objective_value(pwldr)
     PiecewiseLDR.local_search!(pwldr)
     optimize!(pwldr)
-    obj_pwldr_opt = objective_value(pwldr)
-
-    @test obj_ldr >= obj_pwldr_not_opt >= obj_pwldr_opt
+    pwldr_opt = objective_value(pwldr)
+    @test ws <= pwldr_opt <= pwldr_uni < ldr_obj
 end
 
 #End Module

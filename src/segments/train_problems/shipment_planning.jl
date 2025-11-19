@@ -80,9 +80,7 @@ function sp_ldr(
             
     optimize!(ldr)
 
-    X = ldr.primal_model[:X]
-    first_stage_index = sort(collect(ldr.ext[:_LDR_first_stage_indices]))
-    first_stage_decision = value.(X[first_stage_index,1])
+    first_stage_decision = [LinearDecisionRules.get_decision(ldr, buy_1[i]) for i in 1:problem.n_products]
     obj_value = objective_value(ldr)
 
     return ProblemInstance(problem, first_stage_decision, ldr, obj_value, 0)
@@ -217,7 +215,7 @@ function sp_gen_metadata(
     n_clients = size(dist_list, 1)
 
     prod_cost_1 = rand(Uniform(50, 100), n_products)
-    prod_cost_2 = prod_cost_1 .+ rand(Uniform(99, 100), n_products)
+    prod_cost_2 = prod_cost_1 .+ rand(Uniform(75, 100), n_products)
     client_cost = rand(Uniform(25, 50), n_products, n_clients)
 
     demand_dist = shuffle(dist_list)

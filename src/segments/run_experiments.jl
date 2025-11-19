@@ -160,8 +160,8 @@ function get_data(
             push!(pwldr_metadata,
                     (idx_p = idx_p,
                     idx_v = idx_v,
-                    variable = summary(pwldr.PWVR_list[idx_v].distribution),
-                    v_data...)
+                    variable = pwldr.PWVR_list[idx_v].distribution,
+                    v_data...) , promote = true
                 )
             CSV.write("data/$(name)_pwldr_metadata.csv", pwldr_metadata)
             println("Checkpoint pwldr metadata $name, problem: $idx_p, variable: $idx_v")
@@ -235,6 +235,6 @@ dist_list = [
     truncated(Normal(50, 40), 10, 90)
 ]
 
-get_data(ShipmentPlanningSetup, dist_list, 10, 200, 2000, 1, HiGHS.Optimizer)
-#get_data(CapacityExpansionSetup, dist_list, 10, 200, 2000, 1, HiGHS.Optimizer)
-#get_data(NetworkFlowAllocationSetup, dist_list, 10, 200, 2000, 1, HiGHS.Optimizer)
+get_data(ShipmentPlanningSetup, dist_list, 10, 200, 2000, 3, HiGHS.Optimizer)
+get_data(CapacityExpansionSetup, dist_list, 10, 200, 2000, 3, HiGHS.Optimizer)
+get_data(NetworkFlowAllocationSetup, dist_list, 10, 200, 2000, 3, HiGHS.Optimizer)

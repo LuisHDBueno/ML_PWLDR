@@ -281,6 +281,44 @@ def gen_metrics_charts(df_rm, df_md, df_pwldr, name):
     plt.tight_layout()
     plt.savefig(f"img/{name}_comparative_vss.png")
 
+def plot_cost_composition(ws, rp, eev, show_annotations=True):
+
+    if not (ws <= rp <= eev):
+        print(f"Warning: The relationship WS ({ws:.2f}) <= RP ({rp:.2f}) <= EEV ({eev:.2f}) "
+              "is not valid. The plot components may be misleading.")
+        
+    evpi = max(0, rp - ws)
+    vss = max(0, eev - rp)
+    
+    sns.set_theme(style="whitegrid")
+    fig, ax = plt.subplots(figsize=(8, 7))
+
+    x_pos = 'Cost Composition'
+    
+    ax.bar(x_pos, ws, label=f'WS = {ws:.2f}', color='#440154')
+    
+    ax.bar(x_pos, evpi, bottom=ws, label=f'EVPI = {evpi:.2f}', color='#21908d')
+    
+    ax.bar(x_pos, vss, bottom=rp, label=f'VSS = {vss:.2f}', color='#fde725')
+
+    if show_annotations:
+        ax.text(x_pos, eev * 1.02, f'Total EEV = {eev:.2f}', 
+                ha='center', va='bottom', fontsize=12, fontweight='bold')
+        
+        ax.text(x_pos, ws / 2, f'{ws:.2f}', ha='center', va='center', color='white', fontweight='bold')
+        ax.text(x_pos, ws + (evpi / 2), f'{evpi:.2f}', ha='center', va='center', color='white', fontweight='bold')
+        ax.text(x_pos, rp + (vss / 2), f'{vss:.2f}', ha='center', va='center', color='black', fontweight='bold')
+
+    ax.set_title('Solution Cost Composition (EEV)', fontsize=16, fontweight='bold')
+    ax.set_ylabel('Total Value / Cost')
+    ax.set_xlabel('')
+    ax.legend(title="Components", bbox_to_anchor=(1.05, 1), loc='upper left')
+    
+    ax.set_xticks([]) 
+    
+    plt.tight_layout()
+    plt.savefig(f"img/shipment_planning_composition.png")
+
 
 def add_metrics_to_df(df_rm, df_md, df_pwldr):
     # Add nb = 0 to pwldr dataframe
@@ -375,5 +413,10 @@ def gen_capacity_expansion_charts():
     gen_metrics_charts(df_rm, df_md, df_pwldr, "capacity_expansion")
 
 
-gen_shipment_planing_charts()
-gen_capacity_expansion_charts()
+#gen_shipment_planing_charts()
+#gen_capacity_expansion_charts()
+ws_val = 100
+rp_val = 120
+eev_val = 150
+
+plot_cost_composition(ws_val, rp_val, eev_val, show_annotations=True)

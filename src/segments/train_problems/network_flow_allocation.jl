@@ -102,9 +102,7 @@ function nfa_ldr(
 
     optimize!(ldr)
 
-    X = ldr.primal_model[:X]
-    first_stage_index = sort(collect(ldr.ext[:_LDR_first_stage_indices]))
-    first_stage_decision = value.(X[first_stage_index, 1])
+    first_stage_decision = [LinearDecisionRules.get_decision(ldr, capacity[i]) for i in 1:problem.n_warehouses]
     obj_value = objective_value(ldr)
 
     return ProblemInstance(problem, first_stage_decision, ldr, obj_value, 0)
@@ -265,29 +263,37 @@ function nfa_gen_metadata(
 
     demand_dists = shuffle(dist_list)
     op_cost_dists = Matrix{Distribution{Univariate, Continuous}}(undef, n_warehouses, n_customers)
+    dist_list_adapt_costs = [
+        Uniform(30, 60),
+        truncated(Normal(45, 5), 30, 60),
+        MixtureModel([
+            truncated(Normal(37, 3), 30, 60),
+            truncated(Normal(52, 3), 30, 60) 
+        ]),
+
+        truncated(Normal(45, 15), 30, 60)
+    ]
     for i in 1:n_warehouses
-        op_cost_dists[i, :] = shuffle(dist_list)
+        op_cost_dists[i, :] = shuffle(dist_list_adapt_costs)
     end
 
-    invest_cost = rand(Uniform(100, 150), n_warehouses)
-    penalty_cost = rand(Uniform(500, 1000), n_customers) 
-    efficiency = rand(Uniform(1.0, 1.2), n_warehouses, n_customers)
+    invest_cost = rand(Uniform(500, 1000), n_warehouses)
+    penalty_cost = fill(1500, n_customers)
+    efficiency = rand(Uniform(1, 1.25), n_warehouses, n_customers)
 
     samples_train = Vector{Vector{Float64}}(undef, n_samples_train)
     for i in 1:n_samples_train
         d_sample = rand.(demand_dists)
         o_sample = rand.(op_cost_dists)
 
-        full_sample_vector = vcat(d_sample, vec(o_sample))
-        samples_train[i] = sort(full_sample_vector)
+        samples_train[i] = vcat(d_sample, vec(o_sample))
     end
 
     samples_test = Vector{Vector{Float64}}(undef, n_samples_test)
     for i in 1:n_samples_test
         d_sample = rand.(demand_dists)
         o_sample = rand.(op_cost_dists)
-        full_sample_vector = vcat(d_sample, vec(o_sample))
-        samples_test[i] = sort(full_sample_vector)
+        samples_test[i] = vcat(d_sample, vec(o_sample))
     end
 
     return NFAMetadata(
